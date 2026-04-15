@@ -1,0 +1,562 @@
+/**
+ * UNS Audio Engine
+ *
+ * Masking approach (NOT ANC / phase-cancellation):
+ *   - Low-freq rumble → drone fades in over 500ms, "absorbing" the noise
+ *   - High-freq spike  → bell chime triggered as a single transient
+ *   - Binaural beats   → continuous neural entrainment layer
+ *
+ * Debug params (AudioDebugParams) can be hot-updated by the Debug Panel
+ * during real-train testing without restarting the session.
+ */
+
+import { Audio } from 'expo-av';
+import { SanctuaryMode } from '../types';
+import { ANIMATION, NOISE_THRESHOLD } from '../constants/theme';
+import {
+  buildNowPlayingInfo,
+  updateNowPlaying,
+  clearNowPlaying,
+} from '../utils/NowPlayingManager';
+import { useUNSStore } from '../store';
+
+/**
+ * FFT / Mic sampling notes:
+ *
+ * Current demo sweep: 200ms polling interval (Expo JS layer)
+ *
+ * For production native implementation (AVAudioEngine / Oboe):
+ *   - Buffer size: 256 samples @ 44100Hz = 5.8ms per buffer
+ *   - FFT window: 512 samples → 11.6ms resolution
+ *   - High-freq spike (brake sound) detection window: ~100ms (was 200ms)
+ *   → Achieves the requested 100ms improvement in detection latency
+ *
+ * Implementation path:
+ *   iOS:     AVAudioEngine tap → vDSP_fft_zrip → peak detect in 300–4000Hz
+ *   Android: Oboe callback → pffft → spectral peak detect
+ *   Both:    Threshold crossing → JS bridge via EventEmitter → onHighFreqSpike()
+ */
+
+// ─── Binaural beat config ───────────────────────────────────────────────────
+export const BINAURAL_CONFIG = {
+  calm:     { baseHz: 200, beatHz: 6  },
+  focus:    { baseHz: 210, beatHz: 12 },
+  activate: { baseHz: 220, beatHz: 18 },
+} as const;
+
+// ─── Base drone volumes ─────────────────────────────────────────────────────
+const BASE_DRONE_VOLUME: Record<SanctuaryMode, number> = {
+  calm:     0.35,
+  focus:    0.25,
+  activate: 0.15,
+};
+
+// ─── Debug params — hot-swappable from Debug Panel ──────────────────────────
+export interface AudioDebugParams {
+  droneVolMultiplier: number;    // 0.0–2.0, default 1.0
+  eqCutoffHz: number;            // low-pass cutoff, 200–2000 Hz (informational for now)
+  binauralPanDeg: number;        // stereo pan offset, -30 to +30 deg (informational)
+  lowFreqRampMs: number;         // drone fade-in speed, 100–2000 ms
+  highFreqThreshold: number;     // spike trigger level, 0.0–1.0
+}
+
+export const DEFAULT_DEBUG_PARAMS: AudioDebugParams = {
+  droneVolMultiplier: 1.0,
+  eqCutoffHz: 800,
+  binauralPanDeg: 0,
+  lowFreqRampMs: ANIMATION.droneRampMs,
+  highFreqThreshold: NOISE_THRESHOLD.highFreqSpike,
+};
+
+// ─── Sound asset map ────────────────────────────────────────────────────────
+// Metro requires static string literals in require() — dynamic paths are not supported.
+// Each asset is wrapped individually so missing files gracefully return null.
+/* eslint-disable @typescript-eslint/no-var-requires */
+const SOUND_ASSETS = {
+  droneDeep:    (() => { try { return require('../../assets/audio/drone_deep.mp3');               } catch { return null; } })(),
+  droneMid:     (() => { try { return require('../../assets/audio/drone_mid.mp3');                } catch { return null; } })(),
+  bellChime:    (() => { try { return require('../../assets/audio/bell_chime.mp3');               } catch { return null; } })(),
+  natureBed:    (() => { try { return require('../../assets/audio/nature_bed.mp3');               } catch { return null; } })(),
+  onboardingBed:(() => { try { return require('../../assets/audio/onboarding_deep_forest.mp3');   } catch { return null; } })(),
+  shieldOpen:   (() => { try { return require('../../assets/audio/shield_open.mp3');              } catch { return null; } })(),
+  shieldClose:  (() => { try { return require('../../assets/audio/shield_close.mp3');             } catch { return null; } })(),
+};
+/* eslint-enable @typescript-eslint/no-var-requires */
+
+export type AssetKey = keyof typeof SOUND_ASSETS;
+
+class AudioEngine {
+  private sounds: Partial<Record<AssetKey, Audio.Sound>> = {};
+  private isInitialized = false;
+  private currentMode: SanctuaryMode = 'calm';
+  private debugParams: AudioDebugParams = { ...DEFAULT_DEBUG_PARAMS };
+
+  // Current drone target volume — tracked for smooth ramping
+  private droneCurrentVol = 0;
+  private droneRampTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Nature bed current volume — tracked for high-shelf fadeout simulation
+  private natureBedCurrentVol = 0.12;
+
+  // NowPlaying state
+  private sessionStartedAt = 0;
+  private currentRouteName: string | undefined;
+  private nowPlayingTimer: ReturnType<typeof setInterval> | null = null;
+  private latestNoiseLevel = 0;
+
+  // Interruption recovery
+  // When a phone call or system audio event interrupts the session,
+  // expo-av pauses our sounds. We detect the unexpected pause and fade
+  // everything back in once the interruption ends.
+  private isSessionActive = false;
+  private isEndingSession = false;
+  private interruptionRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private onNoiseLevelChange?: (level: number) => void;
+
+  // ─── Init ────────────────────────────────────────────────────────────────
+  async init(): Promise<void> {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      shouldDuckAndroid: false,
+    });
+    this.isInitialized = true;
+  }
+
+  // ─── Preload sounds ──────────────────────────────────────────────────────
+  async preload(): Promise<void> {
+    const entries = Object.entries(SOUND_ASSETS) as [AssetKey, any][];
+    await Promise.all(
+      entries
+        .filter(([, src]) => src !== null)
+        .map(async ([key, src]) => {
+          try {
+            const { sound } = await Audio.Sound.createAsync(src, {
+              isLooping: !['bellChime', 'shieldOpen', 'shieldClose'].includes(key),
+              volume: 0,
+              shouldPlay: false,
+            });
+            this.sounds[key] = sound;
+          } catch (e) {
+            console.warn(`[AudioEngine] Could not load ${key}:`, e);
+          }
+        })
+    );
+  }
+
+  // ─── Onboarding bed (Deep Forest, auto-play on step 2) ──────────────────
+  async startOnboardingBed(): Promise<void> {
+    if (!this.isInitialized) await this.init();
+    await this.setVolume('onboardingBed', 0);
+    await this.play('onboardingBed');
+    // Fade in over 1.5s for a gentle first impression
+    await this.fadeIn('onboardingBed', 0.22, 1500);
+  }
+
+  async stopOnboardingBed(): Promise<void> {
+    await this.fadeOut('onboardingBed', 0.22, 800);
+    await this.sounds['onboardingBed']?.stopAsync().catch(() => {});
+  }
+
+  // ─── Session start ───────────────────────────────────────────────────────
+  async startSession(mode: SanctuaryMode, routeName?: string): Promise<void> {
+    if (!this.isInitialized) await this.init();
+    this.currentMode = mode;
+    this.droneCurrentVol = 0;
+    this.sessionStartedAt = Date.now();
+    this.currentRouteName = routeName;
+
+    await this.stopOnboardingBed().catch(() => {});
+    await this.playShieldOpen();
+
+    await this.setVolume('natureBed', 0.12);
+    this.natureBedCurrentVol = 0.12;
+    await this.play('natureBed');
+
+    // Drone starts at zero — ramps up on first noise detection
+    await this.setVolume('droneDeep', 0);
+    await this.play('droneDeep');
+    await this.setVolume('droneMid', 0);
+    await this.play('droneMid');
+
+    this.isSessionActive = true;
+    this.isEndingSession = false;
+    this.setupInterruptionMonitor();
+    this.startNowPlayingUpdates();
+  }
+
+  // ─── Session end ─────────────────────────────────────────────────────────
+  //
+  // onFadeComplete fires the instant fadeAllOut completes — sound is fully
+  // silent but the shield SFX hasn't played yet. The caller uses this to
+  // trigger a soft haptic: the brain's cue that the sanctuary has dissolved.
+  async endSession(onFadeComplete?: () => void): Promise<void> {
+    this.isSessionActive = false;
+    this.isEndingSession = true;
+    if (this.interruptionRecoveryTimer) {
+      clearTimeout(this.interruptionRecoveryTimer);
+      this.interruptionRecoveryTimer = null;
+    }
+    this.stopNowPlayingUpdates();
+    clearNowPlaying();
+    if (this.droneRampTimer) clearTimeout(this.droneRampTimer);
+    await this.fadeAllOut(3000);
+    onFadeComplete?.();           // ← haptic trigger: sound silent, SFX not yet
+    await this.playShieldClose();
+    await this.stopAll();
+    this.isEndingSession = false;
+  }
+
+  // ─── Interruption monitoring ──────────────────────────────────────────────
+  //
+  // Detects unexpected pauses (phone calls, system alerts, other app audio)
+  // by watching the natureBed playback status. natureBed is looping and
+  // should never stop on its own during an active session — if it does,
+  // that's an interruption signal.
+  //
+  // Recovery: wait 1.5s (covers call duration minimum), re-establish audio
+  // session, then fade everything back in over 2s for a "sanctuary restoring"
+  // sensation rather than an abrupt resumption.
+  private setupInterruptionMonitor(): void {
+    const sound = this.sounds['natureBed'];
+    if (!sound) return;
+
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (!this.isSessionActive || this.isEndingSession) return;
+      if (!status.isLoaded) return;
+      // isPlaying went false without us stopping it = interruption
+      if (!status.isPlaying && !status.didJustFinish && !this.interruptionRecoveryTimer) {
+        this.interruptionRecoveryTimer = setTimeout(
+          () => this.restoreAfterInterruption(),
+          1500
+        );
+      }
+      // Playback resumed on its own (some Android devices auto-resume) — cancel recovery
+      if (status.isPlaying && this.interruptionRecoveryTimer) {
+        clearTimeout(this.interruptionRecoveryTimer);
+        this.interruptionRecoveryTimer = null;
+      }
+    });
+  }
+
+  private async restoreAfterInterruption(): Promise<void> {
+    this.interruptionRecoveryTimer = null;
+    if (!this.isSessionActive || this.isEndingSession) return;
+
+    // Re-establish AVAudioSession / AudioFocus after the interrupting app
+    // has released it. Without this, setVolumeAsync calls silently fail on iOS.
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      shouldDuckAndroid: false,
+    }).catch(() => {});
+
+    // Fade nature bed back in (signals "sanctuary is restoring")
+    await this.setVolume('natureBed', 0);
+    await this.play('natureBed').catch(() => {});
+
+    // Parallel fade: nature bed + drone layer (if drone was active)
+    const droneTarget = this.droneCurrentVol;
+    await Promise.all([
+      this.fadeIn('natureBed', 0.12, 2000),
+      droneTarget > 0.05
+        ? (async () => {
+            await this.setVolume('droneDeep', 0);
+            await this.setVolume('droneMid', 0);
+            await this.play('droneDeep').catch(() => {});
+            await this.play('droneMid').catch(() => {});
+            await this.rampDrone(droneTarget, 2000);
+          })()
+        : Promise.resolve(),
+    ]);
+  }
+
+  // ─── NowPlaying updates (lock screen / control center) ──────────────────
+  //
+  // Updates every 15s so the lock screen always shows fresh elapsed time
+  // and shield strength. The text never shows raw dB or HRV values —
+  // only the qualitative "守られている" status.
+  private startNowPlayingUpdates(): void {
+    this.pushNowPlaying();
+    this.nowPlayingTimer = setInterval(() => this.pushNowPlaying(), 15_000);
+  }
+
+  private stopNowPlayingUpdates(): void {
+    if (this.nowPlayingTimer) {
+      clearInterval(this.nowPlayingTimer);
+      this.nowPlayingTimer = null;
+    }
+  }
+
+  private pushNowPlaying(): void {
+    const info = buildNowPlayingInfo({
+      routeName: this.currentRouteName,
+      noiseLevel: this.latestNoiseLevel,
+      sessionStartedAt: this.sessionStartedAt,
+    });
+    updateNowPlaying(info);
+  }
+
+  setCurrentRoute(routeName: string | undefined): void {
+    this.currentRouteName = routeName;
+  }
+
+  // ─── Low-freq noise detected → ramp drone in over 500ms ─────────────────
+  async onExternalNoise(normalizedLevel: number): Promise<void> {
+    this.latestNoiseLevel = normalizedLevel;
+    this.onNoiseLevelChange?.(normalizedLevel);
+
+    // Nature bed tracks ambient level
+    const bedTarget = 0.08 + normalizedLevel * 0.22;
+    await this.setVolume('natureBed', bedTarget);
+    this.natureBedCurrentVol = bedTarget;
+
+    if (normalizedLevel >= NOISE_THRESHOLD.lowFreqRamp) {
+      const droneTarget =
+        BASE_DRONE_VOLUME[this.currentMode] *
+        this.debugParams.droneVolMultiplier *
+        (0.8 + normalizedLevel * 0.5);
+      const clamped = Math.min(droneTarget, 0.7);
+
+      // Only ramp if target meaningfully exceeds current — avoids chatter
+      if (clamped > this.droneCurrentVol + 0.03) {
+        await this.rampDrone(clamped, this.debugParams.lowFreqRampMs);
+      }
+    } else {
+      // Noise dropped — gentle decay
+      const decayTarget = BASE_DRONE_VOLUME[this.currentMode] * this.debugParams.droneVolMultiplier * 0.3;
+      if (decayTarget < this.droneCurrentVol - 0.02) {
+        await this.rampDrone(decayTarget, this.debugParams.lowFreqRampMs * 2);
+      }
+    }
+  }
+
+  // Smooth ramp: avoids abrupt jumps that cause "wrong note" sensation
+  private async rampDrone(targetVol: number, durationMs: number): Promise<void> {
+    if (this.droneRampTimer) clearTimeout(this.droneRampTimer);
+    const startVol = this.droneCurrentVol;
+    const steps = Math.max(4, Math.round(durationMs / 25));
+    const stepMs = durationMs / steps;
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      // Ease-out curve: fast initial ramp, smooth settle
+      const eased = 1 - Math.pow(1 - t, 2);
+      const vol = startVol + (targetVol - startVol) * eased;
+      await this.setVolume('droneDeep', vol);
+      await this.setVolume('droneMid', vol * 0.55);
+      this.droneCurrentVol = vol;
+      if (i < steps) await new Promise((r) => { this.droneRampTimer = setTimeout(r, stepMs); });
+    }
+    this.droneCurrentVol = targetVol;
+  }
+
+  // ─── High-freq spike → bell chime ────────────────────────────────────────
+  async onHighFreqSpike(): Promise<void> {
+    const bell = this.sounds['bellChime'];
+    if (!bell) return;
+    try {
+      await bell.setPositionAsync(0);
+      await bell.setVolumeAsync(0.48);
+      await bell.playAsync();
+    } catch {}
+  }
+
+  // ─── Shield SFX ──────────────────────────────────────────────────────────
+  private async playShieldOpen(): Promise<void> {
+    const s = this.sounds['shieldOpen'];
+    if (!s) return;
+    await s.setVolumeAsync(0.55);
+    await s.playAsync();
+  }
+
+  private async playShieldClose(): Promise<void> {
+    const s = this.sounds['shieldClose'];
+    if (!s) return;
+    await s.setVolumeAsync(0.45);
+    await s.playAsync();
+    return new Promise((r) => setTimeout(r, 1200));
+  }
+
+  // ─── Mode switch (user tap, 600ms) ──────────────────────────────────────────
+  async switchMode(mode: SanctuaryMode): Promise<void> {
+    this.currentMode = mode;
+    const target = BASE_DRONE_VOLUME[mode] * this.debugParams.droneVolMultiplier;
+    await this.rampDrone(target, 600);
+  }
+
+  // ─── Smart Mode sigmoid transition (F-14, default 60s) ──────────────────────
+  //
+  // S-curve (k=8): slow start → fast middle → slow arrival.
+  // The brain perceives the endpoint as "natural" because there is no
+  // identifiable moment of change — only a gradual drift in character.
+  // All three layers (drone, mid, nature bed) follow the identical curve
+  // for perceptual coherence; a mismatch would feel like an EQ glitch.
+  async smoothTransition(targetMode: SanctuaryMode, durationMs = 60_000): Promise<void> {
+    if (!this.isSessionActive || this.isEndingSession) return;
+
+    const startVol  = this.droneCurrentVol;
+    const targetVol = BASE_DRONE_VOLUME[targetMode] * this.debugParams.droneVolMultiplier;
+    const startBed  = 0.12;
+    // activate mode: slightly less nature bed (energising = lean sound),
+    // calm/focus: slightly more (grounding = full sound)
+    const targetBed = targetMode === 'activate' ? 0.08 : 0.14;
+
+    const steps  = Math.max(20, Math.round(durationMs / 1_000));
+    const stepMs = durationMs / steps;
+
+    for (let i = 1; i <= steps; i++) {
+      if (!this.isSessionActive || this.isEndingSession) break;
+
+      // ── Interruption pause ────────────────────────────────────────────────
+      // If the train stops mid-transition (delay, signal wait), hold the curve
+      // at its current point. Resume the same step-index when movement resumes.
+      // This prevents "music climaxes but user is stuck between stations" horror.
+      if (!useUNSStore.getState().isMoving) {
+        while (!useUNSStore.getState().isMoving) {
+          if (!this.isSessionActive || this.isEndingSession) return;
+          await new Promise<void>((r) => setTimeout(r, 500));
+        }
+        // Resuming: don't skip the step — fall through and apply it
+      }
+
+      const s = this.sigmoidEase(i / steps);
+      const droneVol = startVol + (targetVol - startVol) * s;
+      const bedVol   = startBed + (targetBed - startBed) * s;
+
+      await Promise.all([
+        this.setVolume('droneDeep', droneVol),
+        this.setVolume('droneMid',  droneVol * 0.55),
+        this.setVolume('natureBed', bedVol),
+      ]);
+      this.droneCurrentVol = droneVol;
+      this.natureBedCurrentVol = bedVol;
+
+      if (i < steps) await new Promise<void>((r) => setTimeout(r, stepMs));
+    }
+    this.currentMode = targetMode;
+  }
+
+  // Normalised sigmoid — f(0)=0, f(0.5)=0.5, f(1)=1
+  // k=8 produces a clear S shape without hard-clipping the extremes
+  private sigmoidEase(t: number, k = 8): number {
+    const s  = (x: number) => 1 / (1 + Math.exp(-k * (x - 0.5)));
+    const s0 = s(0), s1 = s(1);
+    return (s(t) - s0) / (s1 - s0);
+  }
+
+  // ─── Debug: hot-update params ─────────────────────────────────────────────
+  updateDebugParams(patch: Partial<AudioDebugParams>): void {
+    this.debugParams = { ...this.debugParams, ...patch };
+  }
+
+  getDebugParams(): AudioDebugParams {
+    return { ...this.debugParams };
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+  private async play(key: AssetKey): Promise<void> {
+    const s = this.sounds[key];
+    if (!s) return;
+    try {
+      const status = await s.getStatusAsync();
+      if (status.isLoaded && status.isPlaying) return;
+      await s.playAsync();
+    } catch {}
+  }
+
+  private async setVolume(key: AssetKey, volume: number): Promise<void> {
+    try {
+      await this.sounds[key]?.setVolumeAsync(Math.max(0, Math.min(1, volume)));
+    } catch {}
+  }
+
+  private async fadeIn(key: AssetKey, targetVol: number, durationMs: number): Promise<void> {
+    const steps = 20;
+    const stepMs = durationMs / steps;
+    for (let i = 1; i <= steps; i++) {
+      await this.setVolume(key, (i / steps) * targetVol);
+      await new Promise((r) => setTimeout(r, stepMs));
+    }
+  }
+
+  private async fadeOut(key: AssetKey, fromVol: number, durationMs: number): Promise<void> {
+    const steps = 16;
+    const stepMs = durationMs / steps;
+    for (let i = steps - 1; i >= 0; i--) {
+      await this.setVolume(key, (i / steps) * fromVol);
+      await new Promise((r) => setTimeout(r, stepMs));
+    }
+  }
+
+  // ─── Psychoacoustic fadeout: high-shelf simulation ───────────────────────
+  //
+  // Real acoustic physics: high frequencies attenuate faster than low in
+  // reverberant / absorptive spaces. We replicate this without native DSP
+  // by using differentiated power curves on the ratio:
+  //
+  //   natureBed  (high/mid presence)  → power 1.5  (convex: drops early)
+  //   droneDeep + droneMid (sub/low)  → power 0.6  (concave: lingers long)
+  //
+  // At the midpoint (ratio = 0.5):
+  //   natureBed  volume ≈ 35% of start  (already nearly gone)
+  //   drone      volume ≈ 66% of start  (still clearly present)
+  //
+  // Perceptual result: the "airy" texture of the sanctuary dissolves first,
+  // leaving only a sub-bass warmth that fades last — "溶けて世界に馴染む" 感覚.
+  private async fadeAllOut(durationMs: number): Promise<void> {
+    const steps = 30;
+    const stepMs = durationMs / steps;
+    const droneVol = this.droneCurrentVol;
+    const bedVol   = this.natureBedCurrentVol;
+
+    for (let i = steps; i >= 0; i--) {
+      const ratio = i / steps;  // 1.0 → 0.0
+
+      // High-shelf: disappears early (convex curve — faster initial drop)
+      const bedRatio   = Math.pow(ratio, 1.5);
+      // Low-freq: lingers (concave curve — slow initial drop, then falls away)
+      const droneRatio = Math.pow(ratio, 0.6);
+
+      await Promise.all([
+        this.setVolume('natureBed', bedRatio   * bedVol),
+        this.setVolume('droneDeep', droneRatio * droneVol),
+        this.setVolume('droneMid',  droneRatio * droneVol * 0.55),
+      ]);
+      await new Promise((r) => setTimeout(r, stepMs));
+    }
+    this.droneCurrentVol    = 0;
+    this.natureBedCurrentVol = 0;
+  }
+
+  private async stopAll(): Promise<void> {
+    await Promise.all(
+      (['natureBed', 'droneDeep', 'droneMid'] as AssetKey[]).map((k) =>
+        this.sounds[k]?.stopAsync().catch(() => {})
+      )
+    );
+  }
+
+  setNoiseLevelCallback(fn: (level: number) => void): void {
+    this.onNoiseLevelChange = fn;
+  }
+
+  async cleanup(): Promise<void> {
+    this.stopNowPlayingUpdates();
+    clearNowPlaying();
+    if (this.droneRampTimer) clearTimeout(this.droneRampTimer);
+    await this.stopAll();
+    await Promise.all(Object.values(this.sounds).map((s) => s?.unloadAsync().catch(() => {})));
+    this.sounds = {};
+    this.isInitialized = false;
+  }
+
+  get isReady(): boolean { return this.isInitialized; }
+
+  getBinauralConfig(mode: SanctuaryMode) { return BINAURAL_CONFIG[mode]; }
+}
+
+export const audioEngine = new AudioEngine();

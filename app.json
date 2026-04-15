@@ -1,30 +1,106 @@
 {
   "expo": {
-    "name": "urban-noise-sanctuary",
+    "name": "Urban Noise Sanctuary",
     "slug": "urban-noise-sanctuary",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0A0A0B"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ryotanakamura.sanctuary",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "周囲の騒音レベルをリアルタイムで分析し、あなたの脳に最適な音響バリアを生成するために使用します。録音データは端末外に送信されません。",
+        "NSLocationWhenInUseUsageDescription": "電車での移動開始を自動で検知し、あなただけの路線プロファイル（Route DNA）を学習するために使用します。位置情報は端末内にのみ保存されます。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Route DNAをバックグラウンドで継続学習するために使用します。位置情報は端末内でのみ処理し、外部に送信しません。",
+        "NSCalendarsUsageDescription": "次の予定の時刻を読み取り、到着前に脳のモードを自動で切り替えます。予定の内容（タイトル・詳細）は読み取りません。時刻のみを使用します。",
+        "NSHealthShareUsageDescription": "Apple Watchの心拍リズム（HRV）から、あなた専用の音響処方を生成します。健康データは一切外部に送信されず、あなたのiPhoneの中だけで処理されます。",
+        "NSHealthUpdateUsageDescription": "Sanctuaryセッションの記録をヘルスケアアプリに書き込みます（オプション）。",
+        "UIBackgroundModes": [
+          "audio",
+          "location",
+          "fetch",
+          "processing"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.uns.sanctuary.route-learning"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0A0A0B"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.ryotanakamura.sanctuary",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.READ_CALENDAR",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.VIBRATE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00C8F0",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Route DNAをバックグラウンドで継続学習するために使用します。位置情報は端末内でのみ処理します。",
+          "locationWhenInUsePermission": "電車での移動開始を検知し、Route DNAを学習するために使用します。",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "次の予定の時刻を読み取り、脳のモードを自動で切り替えます。予定の内容は読み取りません。"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "騒音レベルをリアルタイム分析し、あなたに最適な音響バリアを生成します。録音データは端末外に送信されません。"
+        }
+      ]
+    ],
+    "extra": {
+      "privacyDataCollected": false,
+      "analyticsEnabled": false,
+      "eas": {
+        "projectId": "cb5119fb-294e-4735-a33d-523ea7f51fb3"
+      }
+    },
+    "owner": "nakamurrbiz-afk"
   }
 }

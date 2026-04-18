@@ -136,7 +136,7 @@ export default function SettingsScreen() {
             onValueChange={setNotificationsEnabled}
           />
           <View style={styles.divider} />
-          <SettingsRow label="通知タイミング" value="移動検知時" />
+          <SettingsRow label="通知タイミング" value="通勤時間帯（07:45）" />
         </View>
 
         {/* ── サウンド ── */}
@@ -152,8 +152,6 @@ export default function SettingsScreen() {
         {/* ── プライバシー ── */}
         <SectionHeader title="プライバシー" />
         <View style={styles.card}>
-          <SettingsRow label="位置情報" value="使用中のみ" />
-          <View style={styles.divider} />
           <SettingsRow label="ヘルスケア" value="心拍変動（HRV）" />
           <View style={styles.divider} />
           <SettingsRow label="カレンダー" value="タイトルのみ" />

@@ -21,28 +21,27 @@ import * as Haptics from 'expo-haptics';
 import { ShieldDisplay } from '../components/ShieldDisplay';
 import { CompletionRitual } from '../components/CompletionRitual';
 import { AudioDebugPanel } from '../components/AudioDebugPanel';
-import { PromotionModal } from '../components/PromotionModal';
 import { useUNSStore } from '../store';
 import { audioEngine } from '../engines/AudioEngine';
 import { selectMode, getNextEventTitle } from '../engines/ContextEngine';
 import { hrvEngine } from '../engines/HRVEngine';
-import { locationEngine } from '../engines/LocationEngine';
 import { sanctuaryOrchestrator } from '../engines/SanctuaryOrchestrator';
 import { HRVStaleBanner } from '../components/HRVStaleBanner';
-import { COLORS, TYPOGRAPHY, SPACING, MODE_CONFIG, NOISE_THRESHOLD } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, SPACING, MODE_CONFIG } from '../constants/theme';
 import { SanctuaryMode } from '../types';
 
 // Estimated battery drain during an active session (% per minute):
-//   - expo-location (when-in-use):  ~0.050%/min
-//   - expo-av audio playback:       ~0.067%/min
-//   - background processing:        ~0.017%/min
-//   Total:                          ~0.134%/min (~8%/hr)
-// This is a conservative estimate for real-train testing feedback only.
-const BATTERY_DRAIN_PCT_PER_MS = 0.134 / 60_000;
+//   - expo-av audio playback:    ~0.067%/min
+//   - background processing:     ~0.017%/min
+//   Total:                       ~0.084%/min (~5%/hr)
+// Conservative estimate for real-device testing feedback only.
+const BATTERY_DRAIN_PCT_PER_MS = 0.084 / 60_000;
 
 const { width } = Dimensions.get('window');
 
-// ─── Demo noise sweep for simulator / dev ────────────────────────────────────
+// ─── Simulated noise sweep (Phase 1 placeholder) ─────────────────────────────
+// Drives ShieldDisplay animations until real mic analysis is available.
+// Replaced in Phase 2 by live microphone amplitude from react-native-live-audio-stream.
 function useDemoNoiseSweep(isActive: boolean, onSpike: () => void) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { setNoiseLevel } = useUNSStore();
@@ -71,6 +70,72 @@ function useDemoNoiseSweep(isActive: boolean, onSpike: () => void) {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isActive, onSpike]);
 }
+
+// ─── Mood prompt — for non-Watch users (HRV level = 'none') ─────────────────
+// Maps user's self-reported feeling to the appropriate binaural mode.
+// Shown above the mode selector when no HRV data is available.
+type MoodKey = 'tired' | 'normal' | 'focus';
+
+const MOOD_TO_MODE: Record<MoodKey, SanctuaryMode> = {
+  tired:  'calm',
+  normal: 'calm',
+  focus:  'focus',
+};
+
+const MOODS: { key: MoodKey; label: string }[] = [
+  { key: 'tired',  label: '疲れている' },
+  { key: 'normal', label: 'ふつう' },
+  { key: 'focus',  label: '集中したい' },
+];
+
+function MoodPrompt({
+  selectedMood,
+  onSelect,
+}: {
+  selectedMood: MoodKey | null;
+  onSelect: (mood: MoodKey) => void;
+}) {
+  return (
+    <View style={moodStyles.container}>
+      <Text style={moodStyles.label}>今の気分は？</Text>
+      <View style={moodStyles.row}>
+        {MOODS.map(({ key, label }) => {
+          const isSelected = selectedMood === key;
+          return (
+            <Pressable
+              key={key}
+              style={[moodStyles.pill, isSelected && moodStyles.pillSelected]}
+              onPress={() => onSelect(key)}
+            >
+              <Text style={[moodStyles.pillText, isSelected && moodStyles.pillTextSelected]}>
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const moodStyles = StyleSheet.create({
+  container: { alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.xl },
+  label: { ...TYPOGRAPHY.caption, color: COLORS.textMuted, letterSpacing: 1.5 },
+  row: { flexDirection: 'row', gap: SPACING.sm },
+  pill: {
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderColor: COLORS.textMuted,
+  },
+  pillSelected: {
+    borderColor: COLORS.shieldCore,
+    backgroundColor: COLORS.shieldCore + '18',
+  },
+  pillText: { ...TYPOGRAPHY.caption, color: COLORS.textMuted },
+  pillTextSelected: { color: COLORS.shieldCore },
+});
 
 // ─── Mode selector ────────────────────────────────────────────────────────────
 function ModeSelector({
@@ -118,7 +183,7 @@ const modeStyles = StyleSheet.create({
 });
 
 // ─── Now Playing badge ────────────────────────────────────────────────────────
-function NowPlayingBadge({ routeName }: { routeName?: string }) {
+function NowPlayingBadge() {
   const dot = useSharedValue(1);
   useEffect(() => {
     dot.value = withRepeat(
@@ -132,9 +197,7 @@ function NowPlayingBadge({ routeName }: { routeName?: string }) {
   return (
     <View style={badgeStyles.container}>
       <Animated.View style={[badgeStyles.dot, dotStyle]} />
-      <Text style={badgeStyles.text}>
-        {routeName ? `${routeName} — 稼働中` : 'Sanctuary 稼働中'}
-      </Text>
+      <Text style={badgeStyles.text}>Sanctuary 稼働中</Text>
     </View>
   );
 }
@@ -278,22 +341,16 @@ const batteryStyles = StyleSheet.create({
 });
 
 // ─── Session narrative mapper ─────────────────────────────────────────────────
-// Converts raw session stats into poetic Japanese for the Completion Ritual.
-// Numbers never appear on screen — only the feeling they represent.
-function mapStatsToNarrative(avgNoise: number, gpsLostCount: number): string {
-  if (gpsLostCount >= 3) {
-    return '地下深くの移動中も、\n聖域の調律は一度も途切れませんでした。';
-  }
+// Converts noise stats into poetic Japanese for the Completion Ritual.
+// Maternal tone — consistent with Direction D ritual phrases.
+function mapStatsToNarrative(avgNoise: number): string {
   if (avgNoise >= 0.55) {
-    return '今日は特に騒がしい街でしたが、\nあなたの聖域は守り抜かれました。';
-  }
-  if (gpsLostCount >= 1) {
-    return '地下を抜けながらも、\nあなたの脳波は乱れることなく整い続けました。';
+    return '今日は特に騒がしい環境でしたね。\nその中でもしっかり守れていましたよ。';
   }
   if (avgNoise < 0.25) {
-    return '静かな移動でした。\n今日のあなたの聖域は、これ以上ないほど澄んでいます。';
+    return '穏やかな移動でしたね。\nそっとあなたを包んでいられました。';
   }
-  return '今日もあなたの聖域は、\n完璧に機能しました。';
+  return '今日もあなたの聖域は、\nちゃんと機能していましたよ。';
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -304,7 +361,7 @@ export default function SanctuaryScreen() {
     currentSession,
     sessionHistory,
     noiseLevel,
-    activeRouteProfile,
+    conditionTrend,
     showCompletion,
     startSession,
     endSession,
@@ -322,16 +379,12 @@ export default function SanctuaryScreen() {
   const lastSession = sessionHistory[0];
 
   // AbsorbTrigger: increments on every spike → ShieldDisplay fires absorb flash
-  // Haptic fires on ShieldAbsorb only (not on general noise level changes).
-  // ImpactFeedbackStyle.Rigid = sharp, precise pulse — matches the "shield ate it" moment.
   const [absorbTrigger, setAbsorbTrigger] = useState(0);
   const onSpike = useCallback(() => {
     setAbsorbTrigger((n) => n + 1);
-    // Single short pulse — must not fire on continuous low-freq noise
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
   }, []);
 
-  // Debug panel visibility
   const [debugVisible, setDebugVisible] = useState(false);
 
   // Session noise accumulator — for avg noise stat in debug log
@@ -345,6 +398,10 @@ export default function SanctuaryScreen() {
   // 調律成功トースト
   const [showCalibrationSuccess, setShowCalibrationSuccess] = useState(false);
   const prevHRVTimestampRef = useRef<number | null>(null);
+
+  // Mood selector state — for non-Watch users (HRV level = 'none')
+  const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
+  const showMoodPrompt = conditionTrend.level === 'none' && !isActive;
 
   useEffect(() => {
     if (isActive) {
@@ -379,7 +436,7 @@ export default function SanctuaryScreen() {
     return () => sub.remove();
   }, []);
 
-  // Accumulate noise samples for avg-noise debug stat (only during active session)
+  // Accumulate noise samples for avg-noise stat (only during active session)
   useEffect(() => {
     if (!isActive) return;
     noiseSumRef.current   += noiseLevel;
@@ -403,52 +460,61 @@ export default function SanctuaryScreen() {
     return () => { audioEngine.cleanup(); };
   }, []);
 
+  const handleMoodSelect = useCallback((mood: MoodKey) => {
+    setSelectedMood(mood);
+    setCurrentMode(MOOD_TO_MODE[mood]);
+  }, [setCurrentMode]);
+
   const handleActivate = useCallback(async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Reset per-session accumulators
     noiseSumRef.current   = 0;
     noiseCountRef.current = 0;
-    locationEngine.resetSessionStats();  // GPS-lost counter (used by narrative + debug log)
-    setLastSessionNarrative(null);        // clear previous narrative until new one is ready
+    setLastSessionNarrative(null);
 
-    // Refresh HRV + calendar just before session starts for the most current score.
-    // selectMode auto-picks the optimal binaural mode based on condition + next event.
-    const { title: nextEvent, count } = await getNextEventTitle();
-    await hrvEngine.refresh(count);
-    const trend = useUNSStore.getState().conditionTrend;
-    const autoMode = selectMode(trend.score, nextEvent, new Date().getHours());
-    setCurrentMode(autoMode);
-
-    startSession(autoMode);
-    await audioEngine.startSession(autoMode, activeRouteProfile?.lineName);
+    // If HRV data is available, auto-select mode from condition + next event.
+    // If not (non-Watch user), use the mood-selected mode or default to calm.
+    if (conditionTrend.level !== 'none') {
+      const { title: nextEvent, count } = await getNextEventTitle();
+      await hrvEngine.refresh(count);
+      const trend = useUNSStore.getState().conditionTrend;
+      const autoMode = selectMode(trend.score, nextEvent, new Date().getHours());
+      setCurrentMode(autoMode);
+      startSession(autoMode);
+      await audioEngine.startSession(autoMode);
+    } else {
+      // Non-Watch: use mood-selected mode, fall back to calm
+      const modeToUse = selectedMood ? MOOD_TO_MODE[selectedMood] : 'calm';
+      setCurrentMode(modeToUse);
+      startSession(modeToUse);
+      await audioEngine.startSession(modeToUse);
+    }
 
     // F-14: start Smart Mode transition timer for this session
-    sanctuaryOrchestrator.startModeTransition(activeRouteProfile);
-  }, [startSession, setCurrentMode, activeRouteProfile, setLastSessionNarrative]);
+    sanctuaryOrchestrator.startModeTransition();
+  }, [startSession, setCurrentMode, conditionTrend.level, selectedMood, setLastSessionNarrative]);
 
   const handleDeactivate = useCallback(async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     // Snapshot stats before endSession clears currentSession
-    const sessionStart  = currentSession?.startedAt ?? Date.now();
-    const durationMs    = Date.now() - sessionStart;
-    const avgNoiseRaw   = noiseCountRef.current > 0
+    const durationMs  = Date.now() - (currentSession?.startedAt ?? Date.now());
+    const avgNoiseRaw = noiseCountRef.current > 0
       ? noiseSumRef.current / noiseCountRef.current
       : 0;
-    const gpsLost       = locationEngine.debugGPSLostCount;
 
     endSession();
 
-    // P2: soft haptic fires the instant sound goes fully silent (before shield SFX)
+    // Soft haptic fires the instant sound goes fully silent (before shield SFX)
     await audioEngine.endSession(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     });
 
     sanctuaryOrchestrator.stopModeTransition();
 
-    // Narrative — computed for every user; numbers never leave this function
-    const narrative = mapStatsToNarrative(avgNoiseRaw, gpsLost);
+    // Narrative — maternal tone, never shows numbers
+    const narrative = mapStatsToNarrative(avgNoiseRaw);
     setLastSessionNarrative(narrative);
 
     // Debug log — numeric details visible only when debug panel is unlocked
@@ -462,7 +528,6 @@ export default function SanctuaryScreen() {
         `── SESSION LOG ─────────────────`,
         `Duration  : ${mins}分${secs}秒`,
         `Avg Noise : ${avgNoiseRaw.toFixed(3)}`,
-        `GPS Lost  : ${gpsLost}回`,
         `Est. Batt : ${batteryPct}%`,
         `────────────────────────────────`,
       ].join('\n');
@@ -496,7 +561,7 @@ export default function SanctuaryScreen() {
         />
 
         {isActive ? (
-          <NowPlayingBadge routeName={activeRouteProfile?.lineName} />
+          <NowPlayingBadge />
         ) : (
           <Text style={styles.idleLabel}>
             {isAudioReady ? '準備完了' : '起動中...'}
@@ -513,6 +578,11 @@ export default function SanctuaryScreen() {
           stalenessMins={hrvStalenessMins}
           onDismiss={() => setShowHRVBanner(false)}
         />
+      )}
+
+      {/* Mood prompt — non-Watch users: self-report feeling → auto mode */}
+      {showMoodPrompt && !showHRVBanner && (
+        <MoodPrompt selectedMood={selectedMood} onSelect={handleMoodSelect} />
       )}
 
       {/* Level bars */}
@@ -564,9 +634,6 @@ export default function SanctuaryScreen() {
           onDismiss={dismissCompletion}
         />
       )}
-
-      {/* "Always Allow" promotion — fires once at Route DNA recognition */}
-      <PromotionModal />
 
       {/* Debug panel — DEV builds only, requires 5-tap unlock in Settings */}
       {__DEV__ && isDebugUnlocked && (

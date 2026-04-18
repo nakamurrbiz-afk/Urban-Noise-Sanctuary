@@ -18,7 +18,6 @@ import {
   updateNowPlaying,
   clearNowPlaying,
 } from '../utils/NowPlayingManager';
-import { useUNSStore } from '../store';
 
 /**
  * FFT / Mic sampling notes:
@@ -410,18 +409,6 @@ class AudioEngine {
 
     for (let i = 1; i <= steps; i++) {
       if (!this.isSessionActive || this.isEndingSession) break;
-
-      // ── Interruption pause ────────────────────────────────────────────────
-      // If the train stops mid-transition (delay, signal wait), hold the curve
-      // at its current point. Resume the same step-index when movement resumes.
-      // This prevents "music climaxes but user is stuck between stations" horror.
-      if (!useUNSStore.getState().isMoving) {
-        while (!useUNSStore.getState().isMoving) {
-          if (!this.isSessionActive || this.isEndingSession) return;
-          await new Promise<void>((r) => setTimeout(r, 500));
-        }
-        // Resuming: don't skip the step — fall through and apply it
-      }
 
       const s = this.sigmoidEase(i / steps);
       const droneVol = startVol + (targetVol - startVol) * s;

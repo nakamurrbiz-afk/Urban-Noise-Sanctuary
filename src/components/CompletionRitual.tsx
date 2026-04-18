@@ -70,15 +70,15 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
         <Animated.Text style={[styles.symbolText, line1Style]}>✦</Animated.Text>
 
         <Animated.Text style={[styles.ritualText, line1Style]}>
-          お帰りなさい。
+          今日も、よく来てくれました。
         </Animated.Text>
 
         <Animated.Text style={[styles.ritualText, line2Style]}>
-          脳のバリアを{'\n'}解除しました。
+          街の音が、またあなたに{'\n'}届くようになります。
         </Animated.Text>
 
         <Animated.Text style={[styles.ritualTextBold, line3Style]}>
-          今のあなたは、{'\n'}誰よりもクリアです。
+          また辛くなったら、{'\n'}迷わず戻っておいで。
         </Animated.Text>
 
         {/* Narrative — poetic reflection of what the session encountered */}
@@ -91,13 +91,8 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
         {/* Session summary */}
         <Animated.View style={[styles.summary, summaryStyle]}>
           <View style={styles.divider} />
-          <Text style={styles.summaryLabel}>今回の移動</Text>
-          {session.routeProfile && (
-            <Text style={styles.summaryRoute}>
-              {session.routeProfile.lineName}
-            </Text>
-          )}
-          <Text style={styles.summaryDuration}>{duration}間　Sanctuary維持</Text>
+          <Text style={styles.summaryLabel}>今回のSanctuary</Text>
+          <Text style={styles.summaryDuration}>{duration}間　保護しました</Text>
           <View style={styles.divider} />
         </Animated.View>
 
@@ -163,10 +158,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
     letterSpacing: 2,
-  },
-  summaryRoute: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.textSecondary,
   },
   summaryDuration: {
     ...TYPOGRAPHY.body,

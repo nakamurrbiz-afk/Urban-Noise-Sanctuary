@@ -19,10 +19,7 @@ import * as Haptics from 'expo-haptics';
 
 import { useUNSStore } from '../store';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
-import {
-  requestLocationPermission,
-  getNextEventTitle,
-} from '../engines/ContextEngine';
+import { getNextEventTitle } from '../engines/ContextEngine';
 import { requestNotificationPermission } from '../engines/NotificationEngine';
 import { audioEngine } from '../engines/AudioEngine';
 import { Audio } from 'expo-av';

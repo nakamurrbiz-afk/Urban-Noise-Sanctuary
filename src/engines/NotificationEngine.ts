@@ -11,19 +11,15 @@
 import * as Notifications from 'expo-notifications';
 import { MindWeatherPayload } from '../types';
 
-// expo-notifications native module was removed from Expo Go in SDK 53.
-// Wrap in try/catch so Expo Go doesn't crash.
-try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: false,
-      shouldSetBadge: false,
-    }),
-  });
-} catch {}
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
 export async function requestNotificationPermission(): Promise<boolean> {
   try {

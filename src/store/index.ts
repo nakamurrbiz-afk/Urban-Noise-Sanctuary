@@ -3,7 +3,6 @@ import type {
   SessionStatus,
   SanctuaryMode,
   SanctuarySession,
-  RouteProfile,
   ConditionTrend,
   WeeklySummary,
   HRVReading,
@@ -21,11 +20,6 @@ interface UNSStore {
   sanctuaryLevel: number;     // 0-1 internal calm level
   isAudioReady: boolean;
 
-  // ─── Route DNA ───────────────────────────────────────────
-  routeProfiles: RouteProfile[];
-  activeRouteProfile: RouteProfile | null;
-  isMoving: boolean;
-
   // ─── Biometrics ──────────────────────────────────────────
   conditionTrend: ConditionTrend;
   recentHRV: HRVReading[];
@@ -37,9 +31,6 @@ interface UNSStore {
   // ─── Weekly ──────────────────────────────────────────────
   weeklySummary: WeeklySummary | null;
 
-  // ─── Route DNA promotion ─────────────────────────────────
-  showLocationPromotion: boolean;
-
   // ─── Dev ─────────────────────────────────────────────────
   isDebugUnlocked: boolean;
   lastSessionDebugLog: string | null;
@@ -50,17 +41,13 @@ interface UNSStore {
   endSession: () => void;
   setNoiseLevel: (level: number) => void;
   setSanctuaryLevel: (level: number) => void;
-  setIsMoving: (moving: boolean) => void;
   setAudioReady: (ready: boolean) => void;
-  addRouteProfile: (profile: RouteProfile) => void;
-  setActiveRoute: (profile: RouteProfile | null) => void;
   updateConditionTrend: (trend: ConditionTrend) => void;
   addHRVReading: (reading: HRVReading) => void;
   dismissCompletion: () => void;
   completeOnboarding: () => void;
   setCurrentMode: (mode: SanctuaryMode) => void;
   setWeeklySummary: (summary: WeeklySummary) => void;
-  setShowLocationPromotion: (show: boolean) => void;
   setDebugUnlocked: (unlocked: boolean) => void;
   setLastSessionDebugLog: (log: string | null) => void;
   setLastSessionNarrative: (narrative: string | null) => void;
@@ -75,9 +62,6 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
   noiseLevel: 0,
   sanctuaryLevel: 0,
   isAudioReady: false,
-  routeProfiles: [],
-  activeRouteProfile: null,
-  isMoving: false,
   conditionTrend: {
     level: 'none',
     score: 70,
@@ -88,7 +72,6 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
   showCompletion: false,
   onboardingComplete: false,
   weeklySummary: null,
-  showLocationPromotion: false,
   isDebugUnlocked: false,
   lastSessionDebugLog: null,
   lastSessionNarrative: null,
@@ -101,7 +84,6 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
       mode,
       durationMs: 0,
       hrvLevel: get().conditionTrend.level,
-      routeProfile: get().activeRouteProfile ?? undefined,
     };
     set({ sessionStatus: 'active', currentSession: session, currentMode: mode, showCompletion: false });
   },
@@ -124,15 +106,7 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
 
   setNoiseLevel: (level) => set({ noiseLevel: Math.max(0, Math.min(1, level)) }),
   setSanctuaryLevel: (level) => set({ sanctuaryLevel: Math.max(0, Math.min(1, level)) }),
-  setIsMoving: (moving) => set({ isMoving: moving }),
   setAudioReady: (ready) => set({ isAudioReady: ready }),
-
-  addRouteProfile: (profile) =>
-    set((state) => ({
-      routeProfiles: [profile, ...state.routeProfiles.filter((r) => r.id !== profile.id)],
-    })),
-
-  setActiveRoute: (profile) => set({ activeRouteProfile: profile }),
 
   updateConditionTrend: (trend) => set({ conditionTrend: trend }),
 
@@ -148,8 +122,6 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
   setCurrentMode: (mode) => set({ currentMode: mode }),
 
   setWeeklySummary: (summary) => set({ weeklySummary: summary }),
-
-  setShowLocationPromotion: (show) => set({ showLocationPromotion: show }),
 
   setDebugUnlocked: (unlocked) => set({ isDebugUnlocked: unlocked }),
   setLastSessionDebugLog: (log) => set({ lastSessionDebugLog: log }),

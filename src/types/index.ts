@@ -8,27 +8,8 @@ export interface SanctuarySession {
   startedAt: number;
   endedAt?: number;
   mode: SanctuaryMode;
-  routeProfile?: RouteProfile;
   durationMs: number;
   hrvLevel: HRVDataLevel;
-}
-
-// ─── Route DNA ─────────────────────────────────────────────────────────────
-export interface RouteProfile {
-  id: string;
-  lineName: string;          // e.g. "山手線", "大江戸線"
-  fromStation: string;
-  toStation: string;
-  avgDurationMs: number;
-  noiseProfile: NoiseProfile;
-  detectedAt: number;
-  sessionCount: number;
-}
-
-export interface NoiseProfile {
-  lowFreqIntensity: number;   // 0-1: drone intensity for masking
-  highFreqSpikes: boolean;    // brake sounds detected?
-  avgDecibels: number;
 }
 
 // ─── HRV & Biometrics ──────────────────────────────────────────────────────

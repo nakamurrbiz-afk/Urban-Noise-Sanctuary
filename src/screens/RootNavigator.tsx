@@ -1,17 +1,15 @@
 import React, { useEffect } from 'react';
-import { NavigationContainer, DefaultTheme, DefaultTheme as NavDefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, AppState, AppStateStatus } from 'react-native';
 
 import SanctuaryScreen from './SanctuaryScreen';
 import WeeklySummaryScreen from './WeeklySummaryScreen';
-import RouteDNAScreen from './RouteDNAScreen';
 import SettingsScreen from './SettingsScreen';
 import OnboardingScreen from './OnboardingScreen';
 
 import { useUNSStore } from '../store';
 import { COLORS, TYPOGRAPHY } from '../constants/theme';
-import { locationEngine } from '../engines/LocationEngine';
 import { hrvEngine } from '../engines/HRVEngine';
 import { sanctuaryOrchestrator } from '../engines/SanctuaryOrchestrator';
 import { getNextEventTitle } from '../engines/ContextEngine';
@@ -66,15 +64,6 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Route DNA"
-        component={RouteDNAScreen}
-        options={{
-          tabBarIcon: ({ focused, color }) => (
-            <TabIcon symbol="◈" focused={focused} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
         name="週次レポート"
         component={WeeklySummaryScreen}
         options={{
@@ -97,15 +86,12 @@ function MainTabs() {
 }
 
 // ─── Engine orchestrator ─────────────────────────────────────────────────────
-// Starts location monitoring and HRV refresh after onboarding completes.
+// Requests HealthKit permissions and refreshes HRV after onboarding completes.
 // HRV is refreshed every time the app comes to foreground (AppState change)
 // so condition scores stay fresh without draining battery in background.
 function useEngineOrchestrator(onboardingComplete: boolean) {
   useEffect(() => {
     if (!onboardingComplete) return;
-
-    // Start location monitoring (foreground, WhenInUse permission)
-    locationEngine.startMonitoring();
 
     // Request HealthKit permissions and do initial HRV refresh
     const initHRV = async () => {
@@ -116,8 +102,7 @@ function useEngineOrchestrator(onboardingComplete: boolean) {
     initHRV();
 
     // Start Mind Weather golden-window monitoring
-    const activeRoute = useUNSStore.getState().activeRouteProfile;
-    sanctuaryOrchestrator.start(activeRoute);
+    sanctuaryOrchestrator.start();
 
     // Re-fetch HRV on every app foreground (phone unlock, app switch back)
     const handleAppState = async (nextState: AppStateStatus) => {
@@ -130,7 +115,6 @@ function useEngineOrchestrator(onboardingComplete: boolean) {
 
     return () => {
       sub.remove();
-      locationEngine.stopMonitoring();
       sanctuaryOrchestrator.stop();
     };
   }, [onboardingComplete]);

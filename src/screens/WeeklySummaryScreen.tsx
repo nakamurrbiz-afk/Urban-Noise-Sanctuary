@@ -78,10 +78,7 @@ export default function WeeklySummaryScreen() {
       {/* Best session */}
       {bestSession && (
         <Animated.View entering={FadeInUp.delay(400).duration(600)} style={styles.bestCard}>
-          <Text style={styles.bestLabel}>最も効果が高かったセッション</Text>
-          <Text style={styles.bestRoute}>
-            {bestSession.routeProfile?.lineName ?? '移動中'}
-          </Text>
+          <Text style={styles.bestLabel}>最も長く守れたセッション</Text>
           <Text style={styles.bestDuration}>
             {Math.floor(bestSession.durationMs / 60_000)}分間 Sanctuary維持
           </Text>
@@ -94,7 +91,7 @@ export default function WeeklySummaryScreen() {
           {conditionTrend.level === 'real'
             ? 'Apple Watchのリズムデータで計測しました。'
             : conditionTrend.level === 'estimated'
-            ? '移動パターンからコンディションを推定しました。'
+            ? 'カレンダーと時間帯からコンディションを推定しました。'
             : '今週のデータを蓄積しています。'}
         </Text>
         <Text style={styles.noteSubText}>
@@ -148,7 +145,6 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
   },
   bestLabel: { ...TYPOGRAPHY.caption, color: COLORS.shieldGold, letterSpacing: 1 },
-  bestRoute: { ...TYPOGRAPHY.heading3, color: COLORS.textPrimary },
   bestDuration: { ...TYPOGRAPHY.body, color: COLORS.textSecondary },
   note: {
     marginHorizontal: SPACING.lg,

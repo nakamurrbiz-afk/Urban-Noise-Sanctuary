@@ -2,19 +2,13 @@
  * UNS Context Engine
  *
  * Responsibility:
- *  - Detect transit movement via location velocity
  *  - Estimate condition trend from HRV (3-level fallback)
  *  - Compute Mind Weather notification payload
- *  - Learn Route DNA from repeated movement patterns
+ *  - Read next calendar event for golden-window timing
  */
 
-import * as Location from 'expo-location';
 import * as Calendar from 'expo-calendar';
-import { SanctuaryMode, ConditionTrend, NotificationPattern, MindWeatherPayload, RouteProfile } from '../types';
-
-// Transit detection: >15 km/h sustained for 30s = train/bus movement
-const TRANSIT_SPEED_MS = 15 / 3.6;  // m/s
-const TRANSIT_CONFIRM_MS = 30_000;
+import { SanctuaryMode, ConditionTrend, NotificationPattern, MindWeatherPayload } from '../types';
 
 // ─── Condition Scoring ──────────────────────────────────────────────────────
 // HRV RMSSD reference ranges (rough population norms)
@@ -106,150 +100,6 @@ export function buildMindWeatherPayload(
   }
 
   return { pattern, message, subMessage, scheduledFor: now };
-}
-
-// ─── Route DNA Learning ─────────────────────────────────────────────────────
-
-// A route is "recognized" once it has been observed this many times
-export const ROUTE_RECOGNITION_THRESHOLD = 3;
-
-export interface MovementSample {
-  timestamp: number;
-  latitude: number;
-  longitude: number;
-  speed: number;          // m/s
-}
-
-// Bucket key: groups profiles by speed tier + spike flag for deduplication
-function routeBucketKey(lineName: string, hasSpikes: boolean): string {
-  return `${lineName}|${hasSpikes}`;
-}
-
-export class RouteDNALearner {
-  private samples: MovementSample[] = [];
-  private transitStartTime: number | null = null;
-
-  // Aggregated profiles keyed by bucket — merges repeated sessions
-  private profileBuckets: Map<string, RouteProfile> = new Map();
-
-  addSample(sample: MovementSample): { transitStarted?: boolean; transitEnded?: RouteProfile; recognized?: RouteProfile } {
-    this.samples.push(sample);
-    if (this.samples.length > 500) this.samples.shift();
-
-    const isTransitSpeed = sample.speed > TRANSIT_SPEED_MS;
-
-    if (isTransitSpeed && this.transitStartTime === null) {
-      this.transitStartTime = sample.timestamp;
-      return { transitStarted: true };
-    }
-
-    if (!isTransitSpeed && this.transitStartTime !== null) {
-      const duration = sample.timestamp - this.transitStartTime;
-      const startTime = this.transitStartTime;
-      this.transitStartTime = null;                          // reset before buildProfile
-
-      if (duration > TRANSIT_CONFIRM_MS) {
-        const profile = this.buildProfile(duration, sample, startTime);
-        const merged = this.mergeProfile(profile);
-        const recognized = merged.sessionCount === ROUTE_RECOGNITION_THRESHOLD ? merged : undefined;
-        return { transitEnded: merged, recognized };
-      }
-    }
-
-    return {};
-  }
-
-  private buildProfile(durationMs: number, _endSample: MovementSample, startTime: number): RouteProfile {
-    const transitSamples = this.samples.filter((s) => s.timestamp >= startTime);
-    const avgSpeed =
-      transitSamples.reduce((sum, s) => sum + s.speed, 0) / (transitSamples.length || 1);
-
-    const speedVariance = this.computeSpeedVariance(transitSamples);
-    const hasHighFreqSpikes = speedVariance > 2;
-    const lineName = this.inferLineName(avgSpeed);
-
-    return {
-      id: routeBucketKey(lineName, hasHighFreqSpikes),
-      lineName,
-      fromStation: '起点',
-      toStation: '終点',
-      avgDurationMs: durationMs,
-      noiseProfile: {
-        lowFreqIntensity: Math.min(1, avgSpeed / 30),
-        highFreqSpikes: hasHighFreqSpikes,
-        avgDecibels: 65 + avgSpeed * 0.5,
-      },
-      detectedAt: Date.now(),
-      sessionCount: 1,
-    };
-  }
-
-  // Upsert: increment sessionCount and update avgDurationMs on existing bucket
-  private mergeProfile(profile: RouteProfile): RouteProfile {
-    const key = profile.id;
-    const existing = this.profileBuckets.get(key);
-    if (existing) {
-      const merged: RouteProfile = {
-        ...existing,
-        sessionCount: existing.sessionCount + 1,
-        avgDurationMs: Math.round((existing.avgDurationMs + profile.avgDurationMs) / 2),
-        detectedAt: profile.detectedAt,
-      };
-      this.profileBuckets.set(key, merged);
-      return merged;
-    }
-    this.profileBuckets.set(key, profile);
-    return profile;
-  }
-
-  private computeSpeedVariance(samples: MovementSample[]): number {
-    if (samples.length < 2) return 0;
-    const mean = samples.reduce((s, x) => s + x.speed, 0) / samples.length;
-    return samples.reduce((s, x) => s + Math.pow(x.speed - mean, 2), 0) / samples.length;
-  }
-
-  // Speed-based line inference (location-based refinement is Phase 2)
-  private inferLineName(avgSpeedMs: number): string {
-    const kmh = avgSpeedMs * 3.6;
-    if (kmh < 20) return '地下鉄（低速）';  // 大江戸線など深層地下鉄
-    if (kmh < 40) return '地下鉄';
-    if (kmh < 60) return '電車';
-    return '特急・快速';
-  }
-
-  // Returns profiles that have reached recognition threshold
-  getLearnedRoutes(): RouteProfile[] {
-    return Array.from(this.profileBuckets.values())
-      .filter((p) => p.sessionCount >= ROUTE_RECOGNITION_THRESHOLD)
-      .sort((a, b) => b.sessionCount - a.sessionCount);
-  }
-
-  // Returns true once any route is recognized
-  hasRecognizedRoute(): boolean {
-    return this.getLearnedRoutes().length > 0;
-  }
-
-  // Total sessions processed (for progress reporting)
-  getTotalSessionCount(): number {
-    return Array.from(this.profileBuckets.values())
-      .reduce((sum, p) => sum + p.sessionCount, 0);
-  }
-
-  // Returns true while a transit session is in progress
-  isInTransit(): boolean {
-    return this.transitStartTime !== null;
-  }
-
-  // For testing only
-  _getProfileBuckets(): Map<string, RouteProfile> {
-    return this.profileBuckets;
-  }
-}
-
-// ─── Location Permission ────────────────────────────────────────────────────
-export async function requestLocationPermission(): Promise<boolean> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  return status === 'granted';
 }
 
 // ─── Calendar Read ──────────────────────────────────────────────────────────

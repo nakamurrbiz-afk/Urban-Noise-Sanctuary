@@ -1,23 +1,22 @@
 /**
  * SanctuaryOrchestrator
  *
- * Unifies the four engines (Location, HRV, Audio, Notification) into a single
- * coordinator that runs background logic for the two highest-value automations:
+ * Unifies the HRV, Audio, and Notification engines into a single coordinator
+ * running background logic for two automations:
  *
  * F-13: Mind Weather — "Golden Window" notification timing
  *   Fires a Mind Weather push notification when ALL of:
- *     1. User is in transit (isMoving = true)
- *     2. Next calendar event starts in 8–18 minutes ("golden window")
- *     3. No Sanctuary session is currently active (would be redundant)
- *     4. Notification hasn't been sent in the last 30 minutes (spam guard)
+ *     1. Next calendar event starts in 8–18 minutes ("golden window")
+ *     2. No Sanctuary session is currently active (would be redundant)
+ *     3. Notification hasn't been sent in the last 30 minutes (spam guard)
  *   This intersection makes the notification feel eerily well-timed rather
  *   than arbitrary, which is the core "魔術的UX" quality.
  *
  * F-14: Smart Mode Selector — in-session arrival transition
- *   During an active session, polls every 30s:
- *     • At 70% of route avgDurationMs → check next event type
- *     • Switch to the arrival-appropriate mode with AudioEngine smooth crossfade
- *     • Only transitions once per session (idempotent)
+ *   During an active session, polls every 30s.
+ *   After DEFAULT_COMMUTE_MS × 70% has elapsed, checks the next event type
+ *   and switches to the arrival-appropriate mode with a smooth crossfade.
+ *   Only transitions once per session (idempotent).
  *   Modes: gym/workout → 'activate', meeting/client/プレゼン → 'focus',
  *          evening/low HRV → 'calm' (stays)
  */
@@ -26,7 +25,6 @@ import { getNextEventTitle, buildMindWeatherPayload, selectMode } from './Contex
 import { audioEngine } from './AudioEngine';
 import { scheduleMindWeather } from './NotificationEngine';
 import { useUNSStore } from '../store';
-import { RouteProfile } from '../types';
 
 // ─── F-13 constants ───────────────────────────────────────────────────────────
 const MIND_WEATHER_CHECK_MS   = 5  * 60_000;  // poll every 5 min
@@ -36,13 +34,16 @@ const SPAM_GUARD_MS           = 30 * 60_000;   // max 1 notification per 30 min
 
 // ─── F-14 constants ───────────────────────────────────────────────────────────
 const MODE_CHECK_MS           = 30_000;        // poll every 30s
-const TRANSITION_PROGRESS     = 0.70;          // trigger at 70% of avg route duration
+const TRANSITION_PROGRESS     = 0.70;          // trigger at 70% of session duration
+// Default commute estimate used when no route profile is available.
+// At 70% → ~17.5 min — appropriate for an average urban transit session.
+const DEFAULT_COMMUTE_MS      = 25 * 60_000;   // 25 minutes
 
 class SanctuaryOrchestrator {
-  private mindWeatherTimer:   ReturnType<typeof setInterval> | null = null;
-  private modeTransitionTimer:ReturnType<typeof setInterval> | null = null;
-  private lastNotificationAt  = 0;
-  private modeTransitioned    = false;  // fire once per session
+  private mindWeatherTimer:    ReturnType<typeof setInterval> | null = null;
+  private modeTransitionTimer: ReturnType<typeof setInterval> | null = null;
+  private lastNotificationAt   = 0;
+  private modeTransitioned     = false;  // fire once per session
 
   // ─── F-13: Mind Weather orchestrator ─────────────────────────────────────────
   startMindWeatherMonitor(): void {
@@ -64,8 +65,7 @@ class SanctuaryOrchestrator {
   private async checkMindWeather(): Promise<void> {
     const store = useUNSStore.getState();
 
-    // Guard: skip if not in transit, already in session, or spam guard active
-    if (!store.isMoving) return;
+    // Guard: skip if already in session or spam guard active
     if (store.sessionStatus === 'active') return;
     if (Date.now() - this.lastNotificationAt < SPAM_GUARD_MS) return;
 
@@ -87,13 +87,12 @@ class SanctuaryOrchestrator {
   }
 
   // ─── F-14: Smart Mode Selector ───────────────────────────────────────────────
-  startModeTransition(routeProfile: RouteProfile | null): void {
+  startModeTransition(): void {
     this.stopModeTransition();
-    if (!routeProfile) return;
     this.modeTransitioned = false;
 
     this.modeTransitionTimer = setInterval(
-      () => this.checkModeTransition(routeProfile),
+      () => this.checkModeTransition(),
       MODE_CHECK_MS,
     );
   }
@@ -106,17 +105,17 @@ class SanctuaryOrchestrator {
     this.modeTransitioned = false;
   }
 
-  private async checkModeTransition(routeProfile: RouteProfile): Promise<void> {
+  private async checkModeTransition(): Promise<void> {
     if (this.modeTransitioned) return; // only once per session
 
     const store = useUNSStore.getState();
     if (store.sessionStatus !== 'active' || !store.currentSession) return;
 
     const elapsed  = Date.now() - store.currentSession.startedAt;
-    const progress = elapsed / routeProfile.avgDurationMs;
+    const progress = elapsed / DEFAULT_COMMUTE_MS;
     if (progress < TRANSITION_PROGRESS) return;
 
-    // At 70% of route → determine arrival mode from next event + current score
+    // At 70% of default commute duration → determine arrival mode
     const { title } = await getNextEventTitle().catch(() => ({
       title: null, count: 0, minutesUntilStart: null,
     }));
@@ -134,9 +133,9 @@ class SanctuaryOrchestrator {
   }
 
   // ─── Full lifecycle ───────────────────────────────────────────────────────────
-  start(activeRouteProfile: RouteProfile | null): void {
+  start(): void {
     this.startMindWeatherMonitor();
-    this.startModeTransition(activeRouteProfile);
+    this.startModeTransition();
   }
 
   stop(): void {

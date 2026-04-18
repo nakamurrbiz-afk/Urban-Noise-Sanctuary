@@ -18,7 +18,6 @@ import Slider from '@react-native-community/slider';
 import { audioEngine, AudioDebugParams, DEFAULT_DEBUG_PARAMS } from '../engines/AudioEngine';
 import { scheduleMindWeather } from '../engines/NotificationEngine';
 import { buildMindWeatherPayload } from '../engines/ContextEngine';
-import { locationEngine } from '../engines/LocationEngine';
 import { useUNSStore } from '../store';
 import { NotificationPattern } from '../types';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
@@ -196,12 +195,6 @@ export function AudioDebugPanel({ visible, onToggle }: Props) {
           {/* ── Current param dump ── */}
           <Text style={[styles.section, { marginTop: SPACING.md }]}>CURRENT STATE</Text>
           <Text style={styles.dump}>{JSON.stringify(params, null, 2)}</Text>
-
-          {/* ── Live location debug ── */}
-          <Text style={[styles.section, { marginTop: SPACING.md }]}>LOCATION (LIVE)</Text>
-          <Text style={styles.dump}>
-            {`GPS Hold Active : ${locationEngine.debugGPSHoldActive}\nMotion Alive    : ${locationEngine.debugMotionAlive}\nPedometer Steps : ${locationEngine.debugPedometerSteps}\nGPS Lost (sess) : ${locationEngine.debugGPSLostCount}回`}
-          </Text>
 
           {/* ── Last session log ── */}
           {lastSessionDebugLog && (

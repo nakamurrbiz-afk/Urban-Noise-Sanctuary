@@ -1,11 +1,198 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
-import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
+import Animated, {
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  Easing,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUNSStore } from '../store';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
+import type { SanctuarySession } from '../types';
 
 const { width } = Dimensions.get('window');
+
+// ─── 7-day bar chart ─────────────────────────────────────────────────────────
+
+const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];
+const CHART_BAR_HEIGHT = 72; // max bar height in pts
+
+interface DayData {
+  label: string;
+  minutes: number;
+  isToday: boolean;
+}
+
+function getWeekData(sessions: SanctuarySession[]): DayData[] {
+  const today = new Date();
+  // getDay(): 0=Sun … 6=Sat → convert to 0=Mon … 6=Sun
+  const todayDow = (today.getDay() + 6) % 7;
+
+  return DAYS_JA.map((label, i) => {
+    const offset = i - todayDow;
+    const d = new Date(today);
+    d.setDate(today.getDate() + offset);
+    d.setHours(0, 0, 0, 0);
+    const dayStart = d.getTime();
+    const dayEnd   = dayStart + 86_400_000;
+
+    const minutes = sessions
+      .filter((s) => s.startedAt >= dayStart && s.startedAt < dayEnd)
+      .reduce((sum, s) => sum + s.durationMs / 60_000, 0);
+
+    return { label, minutes, isToday: i === todayDow };
+  });
+}
+
+function AnimatedBar({
+  minutes,
+  maxMinutes,
+  isToday,
+  delay,
+}: {
+  minutes: number;
+  maxMinutes: number;
+  isToday: boolean;
+  delay: number;
+}) {
+  // bars with 0 minutes get a minimal 2pt stub so the chart doesn't look broken
+  const targetH = minutes > 0
+    ? Math.max(5, (minutes / maxMinutes) * CHART_BAR_HEIGHT)
+    : 2;
+
+  const h  = useSharedValue(0);
+  const op = useSharedValue(0);
+
+  useEffect(() => {
+    h.value  = withDelay(delay, withTiming(targetH, {
+      duration: 700,
+      easing: Easing.out(Easing.cubic),
+    }));
+    op.value = withDelay(delay, withTiming(1, { duration: 400 }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const barStyle = useAnimatedStyle(() => ({
+    height:  h.value,
+    opacity: op.value,
+  }));
+
+  const color = isToday
+    ? COLORS.shieldCore
+    : minutes > 0
+      ? COLORS.shieldRing
+      : COLORS.bgSecondary;
+
+  return (
+    // barSlot: fixed-height container with bottom alignment → bar grows upward
+    <View style={[chartStyles.barSlot, { height: CHART_BAR_HEIGHT }]}>
+      <Animated.View style={[chartStyles.bar, barStyle, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+function WeekChart({ sessions }: { sessions: SanctuarySession[] }) {
+  const data        = getWeekData(sessions);
+  const maxMinutes  = Math.max(1, ...data.map((d) => d.minutes));
+  const totalActive = data.filter((d) => d.minutes > 0).length;
+
+  return (
+    <Animated.View
+      entering={FadeInUp.delay(150).duration(600)}
+      style={chartStyles.container}
+    >
+      <View style={chartStyles.header}>
+        <Text style={chartStyles.title}>今週の記録</Text>
+        {totalActive > 0 && (
+          <Text style={chartStyles.activeCount}>{totalActive}日間 展開</Text>
+        )}
+      </View>
+
+      <View style={chartStyles.barsRow}>
+        {data.map((day, i) => (
+          <View key={i} style={chartStyles.column}>
+            <AnimatedBar
+              minutes={day.minutes}
+              maxMinutes={maxMinutes}
+              isToday={day.isToday}
+              delay={i * 55}
+            />
+            {day.minutes > 0 && (
+              <Text style={[chartStyles.value, day.isToday && { color: COLORS.shieldCore }]}>
+                {Math.round(day.minutes)}m
+              </Text>
+            )}
+            <Text style={[chartStyles.dayLabel, day.isToday && { color: COLORS.shieldCore }]}>
+              {day.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
+
+const chartStyles = StyleSheet.create({
+  container: {
+    marginHorizontal: SPACING.lg,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 16,
+    padding: SPACING.lg,
+    marginBottom: SPACING.xl,
+    borderWidth: 0.5,
+    borderColor: COLORS.bgSecondary,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: SPACING.md,
+  },
+  title: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    letterSpacing: 2,
+  },
+  activeCount: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.shieldCore,
+    letterSpacing: 1,
+  },
+  barsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  column: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  barSlot: {
+    width: '55%',
+    justifyContent: 'flex-end',
+  },
+  bar: {
+    width: '100%',
+    borderRadius: 3,
+  },
+  value: {
+    fontSize: 9,
+    fontWeight: '300' as const,
+    color: COLORS.textSecondary,
+    letterSpacing: 0.3,
+  },
+  dayLabel: {
+    fontSize: 10,
+    fontWeight: '300' as const,
+    color: COLORS.textMuted,
+    letterSpacing: 0.5,
+  },
+});
+
+// ─── Trend text ───────────────────────────────────────────────────────────────
 
 function TrendText({ trend }: { trend: 'better' | 'same' | 'worse' }) {
   const config = {
@@ -74,6 +261,9 @@ export default function WeeklySummaryScreen() {
         <StatCard label="合計保護時間" value={totalMinutes} unit="分" />
         <StatCard label="継続日数" value={streakDays} unit="日" />
       </View>
+
+      {/* 7-day bar chart */}
+      <WeekChart sessions={thisWeekSessions} />
 
       {/* Best session */}
       {bestSession && (

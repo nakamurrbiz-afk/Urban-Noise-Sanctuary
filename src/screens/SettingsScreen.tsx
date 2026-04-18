@@ -11,6 +11,7 @@ import {
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useUNSStore } from '../store';
 import { AudioDebugPanel } from '../components/AudioDebugPanel';
+import { cancelMindWeather } from '../engines/NotificationEngine';
 
 const APP_VERSION = '0.1.0 (build 1)';
 
@@ -115,8 +116,20 @@ function VersionBadge() {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [hapticEnabled, setHapticEnabled] = useState(true);
+  const {
+    notificationsEnabled,
+    setNotificationsEnabled,
+    hapticEnabled,
+    setHapticEnabled,
+  } = useUNSStore();
+
+  // When notifications are disabled, cancel any pending Mind Weather notification
+  const handleNotificationToggle = useCallback((enabled: boolean) => {
+    setNotificationsEnabled(enabled);
+    if (!enabled) {
+      cancelMindWeather(); // fire-and-forget — failure is non-critical
+    }
+  }, [setNotificationsEnabled]);
 
   return (
     <View style={styles.root}>
@@ -133,7 +146,7 @@ export default function SettingsScreen() {
           <ToggleRow
             label="Mind Weather 通知"
             value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
+            onValueChange={handleNotificationToggle}
           />
           <View style={styles.divider} />
           <SettingsRow label="通知タイミング" value="通勤時間帯（07:45）" />
@@ -147,6 +160,7 @@ export default function SettingsScreen() {
             value={hapticEnabled}
             onValueChange={setHapticEnabled}
           />
+
         </View>
 
         {/* ── プライバシー ── */}

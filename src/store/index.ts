@@ -31,6 +31,10 @@ interface UNSStore {
   // ─── Weekly ──────────────────────────────────────────────
   weeklySummary: WeeklySummary | null;
 
+  // ─── Settings ────────────────────────────────────────────
+  notificationsEnabled: boolean;
+  hapticEnabled: boolean;
+
   // ─── Dev ─────────────────────────────────────────────────
   isDebugUnlocked: boolean;
   lastSessionDebugLog: string | null;
@@ -51,6 +55,8 @@ interface UNSStore {
   setDebugUnlocked: (unlocked: boolean) => void;
   setLastSessionDebugLog: (log: string | null) => void;
   setLastSessionNarrative: (narrative: string | null) => void;
+  setNotificationsEnabled: (enabled: boolean) => void;
+  setHapticEnabled: (enabled: boolean) => void;
 }
 
 export const useUNSStore = create<UNSStore>((set, get) => ({
@@ -72,6 +78,8 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
   showCompletion: false,
   onboardingComplete: false,
   weeklySummary: null,
+  notificationsEnabled: true,
+  hapticEnabled: true,
   isDebugUnlocked: false,
   lastSessionDebugLog: null,
   lastSessionNarrative: null,
@@ -126,4 +134,6 @@ export const useUNSStore = create<UNSStore>((set, get) => ({
   setDebugUnlocked: (unlocked) => set({ isDebugUnlocked: unlocked }),
   setLastSessionDebugLog: (log) => set({ lastSessionDebugLog: log }),
   setLastSessionNarrative: (narrative) => set({ lastSessionNarrative: narrative }),
+  setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
+  setHapticEnabled: (enabled) => set({ hapticEnabled: enabled }),
 }));

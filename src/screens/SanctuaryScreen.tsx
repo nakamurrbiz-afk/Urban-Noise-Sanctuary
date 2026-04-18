@@ -23,6 +23,7 @@ import { CompletionRitual } from '../components/CompletionRitual';
 import { AudioDebugPanel } from '../components/AudioDebugPanel';
 import { useUNSStore } from '../store';
 import { audioEngine } from '../engines/AudioEngine';
+import { useMicNoise } from '../engines/MicEngine';
 import { selectMode, getNextEventTitle } from '../engines/ContextEngine';
 import { hrvEngine } from '../engines/HRVEngine';
 import { sanctuaryOrchestrator } from '../engines/SanctuaryOrchestrator';
@@ -39,37 +40,8 @@ const BATTERY_DRAIN_PCT_PER_MS = 0.084 / 60_000;
 
 const { width } = Dimensions.get('window');
 
-// ─── Simulated noise sweep (Phase 1 placeholder) ─────────────────────────────
-// Drives ShieldDisplay animations until real mic analysis is available.
-// Replaced in Phase 2 by live microphone amplitude from react-native-live-audio-stream.
-function useDemoNoiseSweep(isActive: boolean, onSpike: () => void) {
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { setNoiseLevel } = useUNSStore();
-
-  useEffect(() => {
-    if (!isActive) {
-      setNoiseLevel(0);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
-    let t = 0;
-    intervalRef.current = setInterval(() => {
-      t += 0.05;
-      const base = 0.28 + Math.sin(t * 0.7) * 0.14;
-      const spike = Math.random() > 0.96 ? 0.82 : 0;
-      const level = Math.min(1, base + spike);
-      setNoiseLevel(level);
-      if (spike > 0) {
-        audioEngine.onHighFreqSpike();
-        onSpike();
-      } else {
-        audioEngine.onExternalNoise(level);
-      }
-    }, 200);
-
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [isActive, onSpike]);
-}
+// useDemoNoiseSweep was here — removed in Phase 2.
+// Real microphone input is now handled by useMicNoise (MicEngine.ts).
 
 // ─── Mood prompt — for non-Watch users (HRV level = 'none') ─────────────────
 // Maps user's self-reported feeling to the appropriate binaural mode.
@@ -449,7 +421,8 @@ export default function SanctuaryScreen() {
     isActive && isDebugUnlocked ? (currentSession?.startedAt ?? null) : null
   );
 
-  useDemoNoiseSweep(isActive, onSpike);
+  // Phase 2: real microphone input replaces the demo sweep
+  useMicNoise(isActive, onSpike);
 
   useEffect(() => {
     (async () => {

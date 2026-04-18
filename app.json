@@ -51,6 +51,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withPrivacyManifest",
       [
         "expo-notifications",
         {

@@ -52,6 +52,7 @@
     },
     "plugins": [
       "./plugins/withPrivacyManifest",
+      "./plugins/withHealthKit",
       [
         "expo-notifications",
         {

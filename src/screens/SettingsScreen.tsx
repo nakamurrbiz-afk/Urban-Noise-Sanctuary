@@ -7,11 +7,13 @@ import {
   Pressable,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useUNSStore } from '../store';
 import { AudioDebugPanel } from '../components/AudioDebugPanel';
 import { cancelMindWeather } from '../engines/NotificationEngine';
+import { restorePurchases } from '../engines/PurchaseEngine';
 
 const APP_VERSION = '0.1.0 (build 1)';
 
@@ -121,7 +123,11 @@ export default function SettingsScreen() {
     setNotificationsEnabled,
     hapticEnabled,
     setHapticEnabled,
+    isPremium,
+    setIsPremium,
   } = useUNSStore();
+
+  const [isRestoring, setIsRestoring] = useState(false);
 
   // When notifications are disabled, cancel any pending Mind Weather notification
   const handleNotificationToggle = useCallback((enabled: boolean) => {
@@ -130,6 +136,27 @@ export default function SettingsScreen() {
       cancelMindWeather(); // fire-and-forget — failure is non-critical
     }
   }, [setNotificationsEnabled]);
+
+  const handleRestorePurchases = useCallback(async () => {
+    try {
+      setIsRestoring(true);
+      const success = await restorePurchases();
+      if (success) {
+        setIsPremium(true);
+        Alert.alert('復元完了', 'Sanctuary Premiumが有効になりました。', [{ text: 'OK' }]);
+      } else {
+        Alert.alert(
+          '復元できる購入が見つかりません',
+          '以前のご購入はこのApple IDに紐付けられていない可能性があります。',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch {
+      Alert.alert('エラー', 'しばらくしてからもう一度お試しください。', [{ text: 'OK' }]);
+    } finally {
+      setIsRestoring(false);
+    }
+  }, [setIsPremium]);
 
   return (
     <View style={styles.root}>
@@ -174,6 +201,27 @@ export default function SettingsScreen() {
             label="データ送信"
             value="なし（端末内処理のみ）"
           />
+        </View>
+
+        {/* ── サブスクリプション ── */}
+        <SectionHeader title="サブスクリプション" />
+        <View style={styles.card}>
+          <SettingsRow
+            label="プラン"
+            value={isPremium ? 'Premium ◉' : '無料（月30分）'}
+          />
+          <View style={styles.divider} />
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+            onPress={handleRestorePurchases}
+            disabled={isRestoring}
+          >
+            <Text style={styles.rowLabel}>以前の購入を復元</Text>
+            {isRestoring
+              ? <ActivityIndicator color={COLORS.textMuted} size="small" />
+              : <Text style={styles.restoreChevron}>›</Text>
+            }
+          </Pressable>
         </View>
 
         {/* ── 情報 ── */}
@@ -249,6 +297,11 @@ const styles = StyleSheet.create({
     height: 0.5,
     backgroundColor: COLORS.bgCard,
     marginHorizontal: SPACING.lg,
+  },
+  restoreChevron: {
+    fontSize: 20,
+    color: COLORS.textMuted,
+    lineHeight: 24,
   },
   versionArea: {
     alignItems: 'center',

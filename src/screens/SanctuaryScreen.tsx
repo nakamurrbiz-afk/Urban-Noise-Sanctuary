@@ -21,10 +21,12 @@ import * as Haptics from 'expo-haptics';
 import { ShieldDisplay } from '../components/ShieldDisplay';
 import { CompletionRitual } from '../components/CompletionRitual';
 import { AudioDebugPanel } from '../components/AudioDebugPanel';
+import { PaywallModal } from '../components/PaywallModal';
 import { useUNSStore } from '../store';
 import { audioEngine } from '../engines/AudioEngine';
 import { useMicNoise } from '../engines/MicEngine';
 import { selectMode, getNextEventTitle } from '../engines/ContextEngine';
+import { isFreeTierExhausted } from '../engines/PurchaseEngine';
 import { hrvEngine } from '../engines/HRVEngine';
 import { sanctuaryOrchestrator } from '../engines/SanctuaryOrchestrator';
 import { HRVStaleBanner } from '../components/HRVStaleBanner';
@@ -345,6 +347,8 @@ export default function SanctuaryScreen() {
     setLastSessionDebugLog,
     lastSessionNarrative,
     setLastSessionNarrative,
+    isPremium,
+    setIsPremium,
   } = useUNSStore();
 
   const isActive = sessionStatus === 'active';
@@ -374,6 +378,9 @@ export default function SanctuaryScreen() {
   // Mood selector state — for non-Watch users (HRV level = 'none')
   const [selectedMood, setSelectedMood] = useState<MoodKey | null>(null);
   const showMoodPrompt = conditionTrend.level === 'none' && !isActive;
+
+  // Paywall state — shown when free tier is exhausted
+  const [showPaywall, setShowPaywall] = useState(false);
 
   useEffect(() => {
     if (isActive) {
@@ -439,6 +446,12 @@ export default function SanctuaryScreen() {
   }, [setCurrentMode]);
 
   const handleActivate = useCallback(async () => {
+    // Free tier gate — premium users always pass
+    if (!isPremium && isFreeTierExhausted(sessionHistory)) {
+      setShowPaywall(true);
+      return;
+    }
+
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Reset per-session accumulators
@@ -467,6 +480,14 @@ export default function SanctuaryScreen() {
     // F-14: start Smart Mode transition timer for this session
     sanctuaryOrchestrator.startModeTransition();
   }, [startSession, setCurrentMode, conditionTrend.level, selectedMood, setLastSessionNarrative]);
+
+  // Called by PaywallModal after successful purchase — unlocks and auto-starts
+  const handlePurchased = useCallback(() => {
+    setIsPremium(true);
+    setShowPaywall(false);
+    // handleActivate will now pass the free-tier gate since isPremium is true
+    handleActivate();
+  }, [setIsPremium, handleActivate]);
 
   const handleDeactivate = useCallback(async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -615,6 +636,14 @@ export default function SanctuaryScreen() {
           onToggle={() => setDebugVisible((v) => !v)}
         />
       )}
+
+      {/* Paywall — shown when free tier (30 min/month) is exhausted */}
+      <PaywallModal
+        visible={showPaywall}
+        sessions={sessionHistory}
+        onClose={() => setShowPaywall(false)}
+        onPurchased={handlePurchased}
+      />
     </View>
   );
 }

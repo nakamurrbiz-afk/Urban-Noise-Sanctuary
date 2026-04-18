@@ -53,6 +53,7 @@
     "plugins": [
       "./plugins/withPrivacyManifest",
       "./plugins/withHealthKit",
+      "react-native-purchases",
       [
         "expo-notifications",
         {

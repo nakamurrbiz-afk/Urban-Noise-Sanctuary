@@ -13,6 +13,7 @@ import { COLORS, TYPOGRAPHY } from '../constants/theme';
 import { hrvEngine } from '../engines/HRVEngine';
 import { sanctuaryOrchestrator } from '../engines/SanctuaryOrchestrator';
 import { getNextEventTitle } from '../engines/ContextEngine';
+import { initPurchases, checkIsPremium } from '../engines/PurchaseEngine';
 
 const Tab = createBottomTabNavigator();
 
@@ -93,6 +94,12 @@ function useEngineOrchestrator(onboardingComplete: boolean) {
   useEffect(() => {
     if (!onboardingComplete) return;
 
+    // Initialize RevenueCat (synchronous) and verify premium status
+    initPurchases();
+    checkIsPremium().then((premium) => {
+      useUNSStore.getState().setIsPremium(premium);
+    });
+
     // Request HealthKit permissions and do initial HRV refresh
     const initHRV = async () => {
       await hrvEngine.requestPermissions();
@@ -104,11 +111,14 @@ function useEngineOrchestrator(onboardingComplete: boolean) {
     // Start Mind Weather golden-window monitoring
     sanctuaryOrchestrator.start();
 
-    // Re-fetch HRV on every app foreground (phone unlock, app switch back)
+    // Re-fetch HRV + re-verify premium on every app foreground
     const handleAppState = async (nextState: AppStateStatus) => {
       if (nextState === 'active') {
         const { count } = await getNextEventTitle();
         await hrvEngine.refresh(count);
+        // Re-check premium in case user subscribed/cancelled outside the app
+        const premium = await checkIsPremium();
+        useUNSStore.getState().setIsPremium(premium);
       }
     };
     const sub = AppState.addEventListener('change', handleAppState);
@@ -121,9 +131,16 @@ function useEngineOrchestrator(onboardingComplete: boolean) {
 }
 
 export default function RootNavigator() {
-  const { onboardingComplete } = useUNSStore();
+  const { onboardingComplete, _hasHydrated } = useUNSStore();
 
   useEngineOrchestrator(onboardingComplete);
+
+  // Show blank dark screen while AsyncStorage is loading persisted state.
+  // This prevents the onboarding-flash bug (showing OnboardingScreen for ~50ms
+  // before the store discovers onboardingComplete === true from storage).
+  if (!_hasHydrated) {
+    return <View style={{ flex: 1, backgroundColor: COLORS.bg }} />;
+  }
 
   return (
     <NavigationContainer theme={UNSTheme}>

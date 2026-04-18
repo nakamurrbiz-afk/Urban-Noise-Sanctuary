@@ -41,10 +41,12 @@ export async function scheduleMindWeather(
 ): Promise<void> {
   try {
     await cancelMindWeather();
-    const trigger =
-      delayMs === 0
-        ? null
-        : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: nextCommuteTime() as Date };
+    // delayMs === 0 → 1秒後に即時配信（SDK 55 は null trigger の型定義を持たないため DATE で代替）
+    const fireAt = delayMs === 0 ? new Date(Date.now() + 1_000) : nextCommuteTime();
+    const trigger: Notifications.DateTriggerInput = {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: fireAt,
+    };
     await Notifications.scheduleNotificationAsync({
       identifier: 'mind_weather',
       content: {

@@ -28,6 +28,7 @@ import type { PurchasesPackage } from 'react-native-purchases';
 import {
   getMonthlyPackage,
   purchaseMonthly,
+  restorePurchases,
   remainingFreeMinutes,
   MONTHLY_FREE_LIMIT_MS,
 } from '../engines/PurchaseEngine';
@@ -38,9 +39,9 @@ const { width } = Dimensions.get('window');
 
 // ─── Feature bullets ─────────────────────────────────────────────────────────
 const FEATURES = [
-  { symbol: '∿', text: '毎月何時間でも聖域を展開できます' },
-  { symbol: '⟡', text: '週次レポートの完全データ' },
-  { symbol: '◉', text: '今後追加される全機能' },
+  { symbol: '∿', text: '通勤のたびに、騒音が消える' },
+  { symbol: '⟡', text: 'あなたの回復パターンが見える' },
+  { symbol: '◉', text: '今後のすべての新機能を先行体験' },
 ];
 
 // ─── PaywallModal ─────────────────────────────────────────────────────────────
@@ -106,7 +107,6 @@ export function PaywallModal({
     try {
       setIsRestoring(true);
       await Haptics.selectionAsync();
-      const { restorePurchases } = await import('../engines/PurchaseEngine');
       const success = await restorePurchases();
       if (success) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -153,7 +153,7 @@ export function PaywallModal({
           {isExhausted ? (
             <Animated.View entering={FadeIn.delay(200).duration(400)} style={styles.usageBox}>
               <Text style={styles.usageExhaustedText}>
-                今月の無料枠（30分）を使い切りました。
+                今月の聖域を、使い切りました。
               </Text>
               <Text style={styles.usageSubText}>
                 {usedMinutes}分間、あなたの聖域を守りました。{'\n'}
@@ -167,7 +167,7 @@ export function PaywallModal({
                 <Text style={styles.usageHighlight}> {remaining}分</Text>
               </Text>
               <Text style={styles.usageSubText}>
-                制限なしで使うには、Premiumへどうぞ。
+                毎日の通勤を聖域にするには、Premiumへ。
               </Text>
             </Animated.View>
           )}
@@ -212,7 +212,7 @@ export function PaywallModal({
               {isPurchasing ? (
                 <ActivityIndicator color={COLORS.textPrimary} />
               ) : (
-                <Text style={styles.purchaseBtnText}>始める</Text>
+                <Text style={styles.purchaseBtnText}>聖域を手に入れる</Text>
               )}
             </Pressable>
 

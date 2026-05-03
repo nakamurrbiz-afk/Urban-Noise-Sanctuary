@@ -1,0 +1,46 @@
+# ════════════════════════════════════════════════════════════════
+# Urban Noise Sanctuary — Sanctuary セッション E2E シナリオ
+#
+# 実行方法:
+#   maestro test e2e/02_sanctuary.yaml
+#
+# 前提: オンボーディング完了済み状態
+# 検証ポイント:
+#   - Sanctuary の展開・解除フロー
+#   - モード切り替え (calm / focus / activate)
+#   - 週次レポートタブへの遷移
+# ════════════════════════════════════════════════════════════════
+
+appId: urban-noise-sanctuary
+---
+
+# オンボーディングを最速完了してメイン画面へ
+- launchApp:
+    clearState: true
+
+- runFlow: flows/complete_onboarding.yaml
+
+# ── Sanctuary 展開 ───────────────────────────────────────────────
+- assertVisible: "Sanctuaryを展開する"
+- tapOn: "Sanctuaryを展開する"
+
+# 展開後のシールド UI が表示されること
+- assertVisible: "解除する"
+
+# ── モード切り替え ───────────────────────────────────────────────
+- tapOn: "calm"
+- tapOn: "focus"
+- tapOn: "activate"
+- tapOn: "calm"
+
+# ── Sanctuary 解除 ───────────────────────────────────────────────
+- tapOn: "解除する"
+- assertVisible: "Sanctuaryを展開する"
+
+# ── 週次レポートタブへの遷移 ─────────────────────────────────────
+- tapOn: "週次レポート"
+- assertVisible: "今週の記録"
+
+# ── メインタブへ戻る ─────────────────────────────────────────────
+- tapOn: "◉"
+- assertVisible: "Sanctuaryを展開する"

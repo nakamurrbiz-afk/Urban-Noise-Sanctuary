@@ -123,6 +123,8 @@ export default function SettingsScreen() {
     setNotificationsEnabled,
     hapticEnabled,
     setHapticEnabled,
+    natureSound,
+    setNatureSound,
     isPremium,
     setIsPremium,
   } = useUNSStore();
@@ -182,12 +184,17 @@ export default function SettingsScreen() {
         {/* ── サウンド ── */}
         <SectionHeader title="サウンド & 触覚" />
         <View style={styles.card}>
+          <SettingsRow
+            label="環境音"
+            value={natureSound === 'wind' ? '風と葉擦れ' : '雨音'}
+            onPress={() => setNatureSound(natureSound === 'wind' ? 'rain' : 'wind')}
+          />
+          <View style={styles.divider} />
           <ToggleRow
             label="シールド吸収 触覚フィードバック"
             value={hapticEnabled}
             onValueChange={setHapticEnabled}
           />
-
         </View>
 
         {/* ── プライバシー ── */}
@@ -230,6 +237,26 @@ export default function SettingsScreen() {
           <SettingsRow label="利用規約" onPress={() => {}} />
           <View style={styles.divider} />
           <SettingsRow label="プライバシーポリシー" onPress={() => {}} />
+          <View style={styles.divider} />
+          <SettingsRow
+            label="音声クレジット"
+            onPress={() => Alert.alert(
+              '音声クレジット',
+              'このアプリでは以下の音声素材を使用しています。\n\n'
+              + '• Forest Ambient LOOP by Imjeax\n'
+              + '  freesound.org — CC BY 4.0\n\n'
+              + '• Rain Loop by qubodup\n'
+              + '  freesound.org — CC BY 3.0\n\n'
+              + '• Bell at Daitokuji temple, Kyoto\n'
+              + '  by nahmandub — CC0\n\n'
+              + '• Big Singing Bowl by Garuda1982\n'
+              + '  freesound.org — CC0\n\n'
+              + '• Forest, trees rustling in the wind\n'
+              + '  by arpeggio1980 — CC0\n\n'
+              + '• Nighttime I — Pixabay License',
+              [{ text: 'OK' }]
+            )}
+          />
         </View>
 
         {/* Version — hidden debug trigger */}

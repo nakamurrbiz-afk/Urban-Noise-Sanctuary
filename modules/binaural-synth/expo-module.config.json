@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["BinauralSynthModule"]
+  },
+  "android": {
+    "modules": ["com.ryotanakamura.binauralsynth.BinauralSynthModule"]
+  }
+}

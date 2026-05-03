@@ -1,0 +1,7 @@
+{
+  "name": "uns-now-playing",
+  "version": "1.0.0",
+  "description": "Lock screen / Control Center Now Playing info for Sanctuary sessions",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

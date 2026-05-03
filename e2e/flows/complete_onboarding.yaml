@@ -1,0 +1,30 @@
+# ────────────────────────────────────────────────────────────────
+# 再利用フロー: オンボーディング全ステップを最速で完了する
+# 権限ダイアログはすべて "Allow" / "あとで" でスキップ
+# 他シナリオから `runFlow` で呼び出す
+# ────────────────────────────────────────────────────────────────
+
+- assertVisible: "あなただけの聖域へ"     # Step 1: Welcome
+- tapOn: "体験してみる"
+
+- assertVisible: "音の体験から始まります"  # Step 2: Experience
+- tapOn: "音を聴く"
+
+# iOS マイク権限ダイアログが出た場合は許可
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+- assertVisible: "あなたのリズムを感知する"  # Step 3: Health
+- tapOn: "あとで"
+
+- assertVisible: "次の予定に合わせてギアを変える"  # Step 4: Calendar
+- tapOn: "スキップ"
+
+- assertVisible: "Mind Weatherをお届けする"  # Step 5: Notification
+- tapOn: "あとで"
+
+- assertVisible: "Sanctuary、準備完了"  # Step 6: Ready
+- tapOn: "聖域へ入る"

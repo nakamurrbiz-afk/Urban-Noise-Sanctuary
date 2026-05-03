@@ -4,11 +4,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   SessionStatus,
   SanctuaryMode,
+  NatureSound,
   SanctuarySession,
   ConditionTrend,
   WeeklySummary,
   HRVReading,
 } from '../types';
+import { MIN_SESSION_MS } from '../utils/sessionStats';
 
 interface UNSStore {
   // ─── Session ─────────────────────────────────────────────
@@ -36,6 +38,7 @@ interface UNSStore {
   // ─── Settings ────────────────────────────────────────────
   notificationsEnabled: boolean;
   hapticEnabled: boolean;
+  natureSound: NatureSound;
 
   // ─── Subscription ────────────────────────────────────────
   // isPremium is a local cache — always re-verified from RevenueCat at launch.
@@ -69,6 +72,7 @@ interface UNSStore {
   setLastSessionNarrative: (narrative: string | null) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setHapticEnabled: (enabled: boolean) => void;
+  setNatureSound: (sound: NatureSound) => void;
   setIsPremium: (premium: boolean) => void;
   _setHasHydrated: (hydrated: boolean) => void;
 }
@@ -96,6 +100,7 @@ export const useUNSStore = create<UNSStore>()(
       weeklySummary: null,
       notificationsEnabled: true,
       hapticEnabled: true,
+      natureSound: 'wind',
       isPremium: false,
       isDebugUnlocked: false,
       lastSessionDebugLog: null,
@@ -117,15 +122,22 @@ export const useUNSStore = create<UNSStore>()(
       endSession: () => {
         const session = get().currentSession;
         if (!session) return;
+        const now = Date.now();
         const completed: SanctuarySession = {
           ...session,
-          endedAt: Date.now(),
-          durationMs: Date.now() - session.startedAt,
+          endedAt: now,
+          durationMs: now - session.startedAt,
         };
+        // Only record sessions lasting ≥ MIN_SESSION_MS (30s) in history.
+        // Shorter sessions are silently discarded — they don't represent
+        // meaningful Sanctuary use and would inflate streak / stats.
+        const qualifies = completed.durationMs >= MIN_SESSION_MS;
         set((state) => ({
           sessionStatus: 'completed',
           currentSession: null,
-          sessionHistory: [completed, ...state.sessionHistory].slice(0, 100),
+          sessionHistory: qualifies
+            ? [completed, ...state.sessionHistory].slice(0, 100)
+            : state.sessionHistory,
           showCompletion: true,
         }));
       },
@@ -150,6 +162,7 @@ export const useUNSStore = create<UNSStore>()(
       setLastSessionNarrative: (narrative) => set({ lastSessionNarrative: narrative }),
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setHapticEnabled: (enabled) => set({ hapticEnabled: enabled }),
+      setNatureSound: (sound) => set({ natureSound: sound }),
       setIsPremium: (premium) => set({ isPremium: premium }),
       _setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
@@ -158,19 +171,41 @@ export const useUNSStore = create<UNSStore>()(
       storage: createJSONStorage(() => AsyncStorage),
 
       // Only persist fields that must survive app restart.
-      // Ephemeral state (noiseLevel, currentSession, etc.) is intentionally excluded.
+      // Ephemeral state (noiseLevel, etc.) is intentionally excluded.
+      // currentSession is persisted so that a crash/force-quit during an
+      // active session can be recovered: on rehydrate we close the orphaned
+      // session with durationMs = now - startedAt.
       partialize: (state) => ({
         onboardingComplete:    state.onboardingComplete,
         sessionHistory:        state.sessionHistory,
+        currentSession:        state.currentSession,
         notificationsEnabled:  state.notificationsEnabled,
         hapticEnabled:         state.hapticEnabled,
+        natureSound:           state.natureSound,
         isPremium:             state.isPremium,
         isDebugUnlocked:       state.isDebugUnlocked,
       }),
 
       onRehydrateStorage: () => (state) => {
-        // Signal RootNavigator that persisted data is ready
-        state?._setHasHydrated(true);
+        if (state) {
+          // Recover orphaned session from crash / force-quit
+          const orphan = state.currentSession;
+          if (orphan) {
+            const now = Date.now();
+            const durationMs = now - orphan.startedAt;
+            if (durationMs >= MIN_SESSION_MS) {
+              const recovered: SanctuarySession = {
+                ...orphan,
+                endedAt: now,
+                durationMs,
+              };
+              state.sessionHistory = [recovered, ...state.sessionHistory].slice(0, 100);
+            }
+            state.currentSession = null;
+            state.sessionStatus = 'idle';
+          }
+          state._setHasHydrated(true);
+        }
       },
     }
   )

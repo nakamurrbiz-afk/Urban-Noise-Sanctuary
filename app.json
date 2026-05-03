@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Urban Noise Sanctuary",
-    "slug": "urban-noise-sanctuary",
+    "slug": "urban-noise-sanctuary-2",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,8 +14,9 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.ryotanakamura.sanctuary",
-      "buildNumber": "1",
+      "appleId": "6765641672",
+      "bundleIdentifier": "urban-noise-sanctuary",
+      "buildNumber": "2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "周囲の騒音レベルをリアルタイムで分析し、あなたの脳に最適な音響バリアを生成するために使用します。録音データは端末外に送信されません。",
@@ -53,13 +54,11 @@
     "plugins": [
       "./plugins/withPrivacyManifest",
       "./plugins/withHealthKit",
-      "react-native-purchases",
       [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#00C8F0",
-          "sounds": []
+          "color": "#00C8F0"
         }
       ],
       [
@@ -73,13 +72,14 @@
         {
           "microphonePermission": "騒音レベルをリアルタイム分析し、あなたに最適な音響バリアを生成します。録音データは端末外に送信されません。"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "privacyDataCollected": false,
       "analyticsEnabled": false,
       "eas": {
-        "projectId": "cb5119fb-294e-4735-a33d-523ea7f51fb3"
+        "projectId": "aa679b61-a0ca-4bd1-8bfa-597ff26b561f"
       }
     },
     "owner": "nakamurrbiz-afk"

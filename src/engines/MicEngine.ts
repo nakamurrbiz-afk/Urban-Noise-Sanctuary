@@ -50,6 +50,12 @@ class MicEngineClass {
   private onLevelCb: ((level: number) => void) | null = null;
   private onSpikeCb: (() => void) | null = null;
 
+  /** Diagnostic counters — exposed for AudioDebugPanel */
+  rawDb = -160;
+  normalizedLevel = 0;
+  private _meteringUndefinedCount = 0;
+  private _meteringTotalCount = 0;
+
   /**
    * Start microphone capture.
    * Silently no-ops if permission is not granted or already running.
@@ -86,6 +92,9 @@ class MicEngineClass {
 
       this.recording = rec;
       this.isRunning = true;
+      this._meteringUndefinedCount = 0;
+      this._meteringTotalCount = 0;
+      console.log(`[MicEngine] Started — calibration: floor=${DB_FLOOR}dB, ceil=${DB_CEIL}dB, poll=${POLL_INTERVAL_MS}ms`);
     } catch (err) {
       console.warn('[MicEngine] Failed to start recording:', err);
       this.recording = null;
@@ -121,14 +130,30 @@ class MicEngineClass {
 
   private handleStatus = (status: Audio.RecordingStatus): void => {
     if (!this.isRunning) return;
-    if (!status.isRecording || status.metering === undefined) return;
+    this._meteringTotalCount++;
+
+    if (!status.isRecording || status.metering === undefined) {
+      this._meteringUndefinedCount++;
+      // Log every 50th undefined to avoid spam but keep visibility
+      if (this._meteringUndefinedCount % 50 === 1) {
+        console.warn(
+          `[MicEngine] metering undefined — ${this._meteringUndefinedCount}/${this._meteringTotalCount} samples (${Math.round(100 * this._meteringUndefinedCount / this._meteringTotalCount)}%)`,
+        );
+      }
+      return;
+    }
 
     const level = dbToNormalized(status.metering);
 
+    // Expose raw values for AudioDebugPanel
+    this.rawDb = status.metering;
+    this.normalizedLevel = level;
+
     this.onLevelCb?.(level);
 
-    // Rising-edge spike detection
-    if (level >= NOISE_THRESHOLD.highFreqSpike && this.prevLevel < NOISE_THRESHOLD.highFreqSpike) {
+    // Rising-edge spike detection — threshold can be hot-adjusted from DebugPanel
+    const threshold = audioEngine.getDebugParams().highFreqThreshold;
+    if (level >= threshold && this.prevLevel < threshold) {
       this.onSpikeCb?.();
     }
     this.prevLevel = level;
@@ -136,6 +161,18 @@ class MicEngineClass {
 
   get isActive(): boolean {
     return this.isRunning;
+  }
+
+  /** Diagnostic snapshot for AudioDebugPanel. */
+  get diagnostics() {
+    return {
+      rawDb: this.rawDb,
+      normalized: this.normalizedLevel,
+      undefinedRate: this._meteringTotalCount > 0
+        ? this._meteringUndefinedCount / this._meteringTotalCount
+        : 0,
+      totalSamples: this._meteringTotalCount,
+    };
   }
 }
 

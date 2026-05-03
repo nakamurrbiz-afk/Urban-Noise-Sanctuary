@@ -24,6 +24,23 @@ import { requestNotificationPermission } from '../engines/NotificationEngine';
 import { audioEngine } from '../engines/AudioEngine';
 import { Audio } from 'expo-av';
 
+/**
+ * 音声セッションの初期化を安全に実行する。
+ * Audio.setAudioModeAsync が iOS 実機で失敗しても呼び出し元の遷移をブロックしない。
+ * テスト可能にするためトップレベルにエクスポートする。
+ */
+export async function initAudioSafely(): Promise<boolean> {
+  try {
+    await Audio.requestPermissionsAsync();
+    await audioEngine.init();
+    await audioEngine.preload();
+    return true;
+  } catch (e) {
+    console.warn('[OnboardingScreen] Audio init failed, proceeding without sound:', e);
+    return false;
+  }
+}
+
 const { width, height } = Dimensions.get('window');
 
 // ─── Step definitions ────────────────────────────────────────────────────────
@@ -43,16 +60,16 @@ const STEPS: Step[] = [
     symbol: '◉',
     headline: 'あなただけの聖域へ',
     body:
-      '都市の騒音を、脳の栄養に変える。\nUrban Noise Sanctuary は、\n移動時間を「脳のトリートメント」に変えるツールです。',
+      '通勤が、消える。\n電車が、森になる。\n\nUrban Noise Sanctuary は、\n騒音をあなただけの聖域に変えます。',
     cta: '体験してみる',
   },
   {
     id: 'experience',
     symbol: '∿',
-    headline: '音の体験から始まります',
+    headline: 'まず、音を聴いてください',
     body:
-      'まず、今この瞬間だけのSanctuaryを展開します。\n設定は一切不要です。\nイヤホンを装着して、次へ進んでください。',
-    cta: '音を聴く',
+      'イヤホンを装着して、次へ進んでください。\n\n今この瞬間だけの聖域を展開します。\n設定は一切不要です。',
+    cta: '聖域を体験する',
   },
   {
     id: 'health',
@@ -66,7 +83,7 @@ const STEPS: Step[] = [
   },
   {
     id: 'calendar',
-    headline: '次の予定に合わせてギアを変える',
+    headline: '到着前に、脳が切り替わる',
     symbol: '◫',
     body:
       '予定の時刻を読み取ることで、\n到着前に脳のモードが自動的に切り替わります。\n\n予定の内容は読みません。\n時刻と場所のみを使用します。',
@@ -77,7 +94,7 @@ const STEPS: Step[] = [
   {
     id: 'notification',
     symbol: '✦',
-    headline: 'Mind Weatherをお届けする',
+    headline: '朝、脳の天気予報が届く',
     body:
       '毎朝一度、今日のあなたの\n「脳のコンディション予報」をお届けします。\n\n1日1回、朝のみ。\nいつでもOFFにできます。',
     cta: '通知を受け取る',
@@ -87,9 +104,9 @@ const STEPS: Step[] = [
   {
     id: 'ready',
     symbol: '⟡',
-    headline: 'Sanctuary、準備完了',
+    headline: '明日の電車が、変わります',
     body:
-      'あなたのiPhoneの中に、\nプライベートな聖域が生まれました。\n\n東京の騒音は、もうあなたを乱しません。',
+      'あなたのiPhoneの中に、\nプライベートな聖域が生まれました。\n\n通勤の景色が、明日から変わります。',
     cta: '聖域へ入る',
   },
 ];
@@ -214,22 +231,23 @@ export default function OnboardingScreen() {
   }, []);
 
   const handleNext = async () => {
-    await Haptics.selectionAsync();
+    // F2: Haptics は非対応端末でも throw するため保護する
+    try { await Haptics.selectionAsync(); } catch {}
 
     if (step.id === 'experience') {
-      // Step 2: request audio + start Deep Forest bed immediately
-      // This is the "これはすごい" moment — sound starts before any further action
-      await Audio.requestPermissionsAsync();
-      await audioEngine.init();
-      await audioEngine.preload();
-      audioEngine.startOnboardingBed().catch(() => {});
-      bedPlayingRef.current = true;
+      // Step 2: F1 修正 — 音声初期化に失敗しても必ず次ステップへ進む
+      // initAudioSafely は内部で try-catch 済み、失敗時は false を返す
+      const audioReady = await initAudioSafely();
+      if (audioReady) {
+        audioEngine.startOnboardingBed().catch(() => {});
+        bedPlayingRef.current = true;
+      }
     } else if (step.id === 'health') {
       // HealthKit — native module would go here
     } else if (step.id === 'calendar') {
-      await getNextEventTitle();
+      try { await getNextEventTitle(); } catch {}
     } else if (step.id === 'notification') {
-      await requestNotificationPermission();
+      try { await requestNotificationPermission(); } catch {}
     }
 
     if (isLast) {

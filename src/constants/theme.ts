@@ -70,7 +70,7 @@ export const MODE_CONFIG = {
     color: '#3D82C8',
     binauralHz: 6,
     droneIntensity: 0.35,
-    description: '副交感神経を優位に',
+    description: '電車が、深い森になる',
   },
   focus: {
     label: 'Focus',
@@ -78,7 +78,7 @@ export const MODE_CONFIG = {
     color: '#6A5AE0',
     binauralHz: 12,
     droneIntensity: 0.25,
-    description: 'リラックスした集中へ',
+    description: '雑音が消え、思考が澄む',
   },
   activate: {
     label: 'Activate',
@@ -86,7 +86,7 @@ export const MODE_CONFIG = {
     color: '#F05A28',
     binauralHz: 18,
     droneIntensity: 0.15,
-    description: '交感神経を優位に',
+    description: '到着前に、スイッチが入る',
   },
 } as const;
 

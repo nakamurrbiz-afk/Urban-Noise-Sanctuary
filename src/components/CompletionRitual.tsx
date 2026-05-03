@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -9,8 +9,11 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { SanctuarySession } from '../types';
+import { SanctuaryShareCard } from './SanctuaryShareCard';
 
 const { height } = Dimensions.get('window');
 
@@ -35,9 +38,25 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
   const narrativeOpacity = useSharedValue(0);
   const summaryOpacity = useSharedValue(0);
 
+  const viewShotRef = useRef<ViewShot>(null);
+
   const duration = session.endedAt
     ? formatDuration(session.endedAt - session.startedAt)
     : formatDuration(session.durationMs);
+
+  const handleShare = useCallback(async () => {
+    try {
+      const uri = await viewShotRef.current?.capture?.();
+      if (!uri) return;
+      if (!(await Sharing.isAvailableAsync())) return;
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Sanctuaryカードをシェア',
+      });
+    } catch {
+      // Silently degrade — share is enhancement, not core
+    }
+  }, []);
 
   useEffect(() => {
     containerOpacity.value = withTiming(1, { duration: 600 });
@@ -96,12 +115,22 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
           <View style={styles.divider} />
         </Animated.View>
 
-        {/* Dismiss */}
-        <Animated.View style={summaryStyle}>
+        {/* Share + Dismiss */}
+        <Animated.View style={[styles.actions, summaryStyle]}>
+          <Pressable style={styles.shareButton} onPress={handleShare}>
+            <Text style={styles.shareText}>カードをシェア</Text>
+          </Pressable>
           <Pressable style={styles.dismissButton} onPress={onDismiss}>
             <Text style={styles.dismissText}>閉じる</Text>
           </Pressable>
         </Animated.View>
+      </View>
+
+      {/* Off-screen capture target — invisible to user */}
+      <View style={styles.offScreen} pointerEvents="none">
+        <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1 }}>
+          <SanctuaryShareCard session={session} narrative={narrative} />
+        </ViewShot>
       </View>
     </Animated.View>
   );
@@ -163,6 +192,25 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.body,
     color: COLORS.textSecondary,
   },
+  actions: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    alignItems: 'center',
+  },
+  shareButton: {
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    backgroundColor: COLORS.shieldGold + '18',
+    borderWidth: 0.5,
+    borderColor: COLORS.shieldGold + '60',
+    borderRadius: 24,
+  },
+  shareText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.shieldGold,
+    letterSpacing: 2,
+  },
   dismissButton: {
     marginTop: SPACING.md,
     paddingVertical: SPACING.sm,
@@ -175,5 +223,11 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     letterSpacing: 2,
+  },
+  offScreen: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    opacity: 1, // must be visible for ViewShot to capture
   },
 });

@@ -43,7 +43,7 @@ class SanctuaryOrchestrator {
   private mindWeatherTimer:    ReturnType<typeof setInterval> | null = null;
   private modeTransitionTimer: ReturnType<typeof setInterval> | null = null;
   private lastNotificationAt   = 0;
-  private modeTransitioned     = false;  // fire once per session
+  private transitionedSessionId: string | null = null;  // fire once per session
 
   // ─── F-13: Mind Weather orchestrator ─────────────────────────────────────────
   startMindWeatherMonitor(): void {
@@ -89,7 +89,7 @@ class SanctuaryOrchestrator {
   // ─── F-14: Smart Mode Selector ───────────────────────────────────────────────
   startModeTransition(): void {
     this.stopModeTransition();
-    this.modeTransitioned = false;
+    this.transitionedSessionId = null;
 
     this.modeTransitionTimer = setInterval(
       () => this.checkModeTransition(),
@@ -102,14 +102,16 @@ class SanctuaryOrchestrator {
       clearInterval(this.modeTransitionTimer);
       this.modeTransitionTimer = null;
     }
-    this.modeTransitioned = false;
+    this.transitionedSessionId = null;
   }
 
   private async checkModeTransition(): Promise<void> {
-    if (this.modeTransitioned) return; // only once per session
-
     const store = useUNSStore.getState();
     if (store.sessionStatus !== 'active' || !store.currentSession) return;
+
+    // Only fire once per session — bound to session ID to prevent
+    // double-triggering on rapid endSession → startSession cycles
+    if (this.transitionedSessionId === store.currentSession.id) return;
 
     const elapsed  = Date.now() - store.currentSession.startedAt;
     const progress = elapsed / DEFAULT_COMMUTE_MS;
@@ -129,7 +131,7 @@ class SanctuaryOrchestrator {
       audioEngine.smoothTransition(arrivalMode, 60_000); // fire-and-forget
     }
 
-    this.modeTransitioned = true; // prevent re-triggering within same session
+    this.transitionedSessionId = store.currentSession!.id;
   }
 
   // ─── Full lifecycle ───────────────────────────────────────────────────────────

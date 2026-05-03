@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { audioEngine, AudioDebugParams, DEFAULT_DEBUG_PARAMS } from '../engines/AudioEngine';
+import { micEngine } from '../engines/MicEngine';
 import { scheduleMindWeather } from '../engines/NotificationEngine';
 import { buildMindWeatherPayload } from '../engines/ContextEngine';
 import { useUNSStore } from '../store';
@@ -87,6 +88,7 @@ export function AudioDebugPanel({ visible, onToggle }: Props) {
   const [params, setParams] = useState<AudioDebugParams>({ ...DEFAULT_DEBUG_PARAMS });
   const [notifSent, setNotifSent] = useState<NotificationPattern | null>(null);
   const lastSessionDebugLog = useUNSStore((s) => s.lastSessionDebugLog);
+  const noiseLevel = useUNSStore((s) => s.noiseLevel);
 
   const updateParam = useCallback(<K extends keyof AudioDebugParams>(
     key: K,
@@ -129,6 +131,23 @@ export function AudioDebugPanel({ visible, onToggle }: Props) {
       {visible && (
         <ScrollView style={styles.panel} contentContainerStyle={styles.panelContent}>
 
+          {/* ── Mic diagnostics ── */}
+          <Text style={styles.section}>MIC DIAGNOSTICS</Text>
+          <View style={styles.micRow}>
+            <Text style={styles.micLabel}>Raw dB</Text>
+            <Text style={styles.micValue}>{micEngine.diagnostics.rawDb.toFixed(1)} dB</Text>
+          </View>
+          <View style={styles.micRow}>
+            <Text style={styles.micLabel}>Normalized</Text>
+            <Text style={styles.micValue}>{noiseLevel.toFixed(3)}</Text>
+          </View>
+          <View style={styles.micRow}>
+            <Text style={styles.micLabel}>Undefined rate</Text>
+            <Text style={styles.micValue}>
+              {(micEngine.diagnostics.undefinedRate * 100).toFixed(1)}% ({micEngine.diagnostics.totalSamples} samples)
+            </Text>
+          </View>
+
           {/* ── Audio parameters ── */}
           <Text style={styles.section}>AUDIO PARAMS</Text>
 
@@ -137,18 +156,6 @@ export function AudioDebugPanel({ visible, onToggle }: Props) {
             value={params.droneVolMultiplier}
             min={0} max={2} step={0.05} unit="×"
             onChange={(v) => updateParam('droneVolMultiplier', v)}
-          />
-          <ParamSlider
-            label="EQ Cutoff"
-            value={params.eqCutoffHz}
-            min={200} max={2000} step={50} unit=" Hz"
-            onChange={(v) => updateParam('eqCutoffHz', v)}
-          />
-          <ParamSlider
-            label="Binaural Pan"
-            value={params.binauralPanDeg}
-            min={-30} max={30} step={1} unit="°"
-            onChange={(v) => updateParam('binauralPanDeg', v)}
           />
           <ParamSlider
             label="Drone Ramp Speed"
@@ -290,4 +297,12 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     lineHeight: 18,
   },
+
+  micRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: 2,
+  },
+  micLabel: { ...TYPOGRAPHY.debug, color: COLORS.textMuted },
+  micValue: { ...TYPOGRAPHY.debug, color: COLORS.shieldCore },
 });

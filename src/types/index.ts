@@ -1,5 +1,6 @@
 // ─── Session & State ───────────────────────────────────────────────────────
 export type SanctuaryMode = 'calm' | 'focus' | 'activate';
+export type NatureSound = 'wind' | 'rain';
 export type SessionStatus = 'idle' | 'active' | 'paused' | 'completed';
 export type HRVDataLevel = 'real' | 'estimated' | 'none';
 

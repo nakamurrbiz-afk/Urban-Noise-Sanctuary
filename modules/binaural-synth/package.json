@@ -1,0 +1,7 @@
+{
+  "name": "binaural-synth",
+  "version": "1.0.0",
+  "description": "Real-time binaural beat synthesizer — L/R channel independent sine oscillators",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

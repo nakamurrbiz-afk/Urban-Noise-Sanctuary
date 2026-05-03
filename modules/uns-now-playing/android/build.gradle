@@ -1,0 +1,22 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module'
+
+android {
+  compileSdkVersion safeExtGet("compileSdkVersion", 34)
+  namespace "com.ryotanakamura.unsnowplaying"
+
+  defaultConfig {
+    minSdkVersion safeExtGet("minSdkVersion", 24)
+    targetSdkVersion safeExtGet("targetSdkVersion", 34)
+  }
+
+  kotlinOptions {
+    jvmTarget = "17"
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+  implementation "androidx.media:media:1.7.0"
+}

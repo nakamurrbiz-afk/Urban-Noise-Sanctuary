@@ -29,15 +29,19 @@ import { Platform } from 'react-native';
 import type { SanctuarySession } from '../types';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
-// TODO: Replace with real iOS public SDK key from RevenueCat dashboard
-const REVENUECAT_API_KEY_IOS = 'appl_REPLACE_WITH_YOUR_REVENUECAT_API_KEY';
+const REVENUECAT_API_KEY_IOS = 'appl_GmtYsZjXKPThtiggAHgESKaAasW';
 
 export const ENTITLEMENT_ID          = 'sanctuary_premium';
 export const MONTHLY_FREE_LIMIT_MS   = 30 * 60 * 1000;  // 30 minutes
 
 // ─── Free tier helpers ────────────────────────────────────────────────────────
 
-/** Total Sanctuary duration in the current calendar month (ms). */
+/**
+ * Total Sanctuary duration in the current calendar month (ms).
+ * Sessions are attributed to the month of their startedAt timestamp.
+ * A session that spans midnight on the last day of the month is fully
+ * counted in the starting month — this is intentional (matches billing norms).
+ */
 export function getThisMonthUsageMs(sessions: SanctuarySession[]): number {
   const now        = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();

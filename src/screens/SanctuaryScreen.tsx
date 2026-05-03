@@ -232,8 +232,8 @@ function CalibrationSuccessToast({ visible }: { visible: boolean }) {
     <Animated.View style={[toastStyles.container, style]}>
       <Text style={toastStyles.icon}>◉</Text>
       <View>
-        <Text style={toastStyles.primary}>あなたの脳のさざなみが静まりました。</Text>
-        <Text style={toastStyles.secondary}>今日のあなた専用の聖域を再構築しています</Text>
+        <Text style={toastStyles.primary}>あなたの聖域が、整いました。</Text>
+        <Text style={toastStyles.secondary}>今日のあなた専用の音響空間を展開中</Text>
       </View>
     </Animated.View>
   );
@@ -318,13 +318,45 @@ const batteryStyles = StyleSheet.create({
 // Converts noise stats into poetic Japanese for the Completion Ritual.
 // Maternal tone — consistent with Direction D ritual phrases.
 function mapStatsToNarrative(avgNoise: number): string {
+  // High noise (0.55+): acknowledge the harshness, affirm protection
+  if (avgNoise >= 0.70) {
+    const variants = [
+      'かなり激しい環境でしたね。\nでも、あなたの脳は守られていました。',
+      '嵐のような騒音の中でも、\n聖域はあなたを離しませんでした。',
+    ];
+    return variants[Math.floor(Date.now() / 60_000) % variants.length];
+  }
   if (avgNoise >= 0.55) {
-    return '今日は特に騒がしい環境でしたね。\nその中でもしっかり守れていましたよ。';
+    const variants = [
+      '今日は特に騒がしい環境でしたね。\nその中でもしっかり守れていましたよ。',
+      '騒がしい車内でしたが、\nあなたの内側は静かなままでした。',
+      '周りの音が強い日でしたね。\nバリアがしっかり仕事をしていました。',
+    ];
+    return variants[Math.floor(Date.now() / 60_000) % variants.length];
   }
-  if (avgNoise < 0.25) {
-    return '穏やかな移動でしたね。\nそっとあなたを包んでいられました。';
+  // Moderate noise (0.25–0.55): standard protection
+  if (avgNoise >= 0.40) {
+    const variants = [
+      '今日もあなたの聖域は、\nちゃんと機能していましたよ。',
+      '日常の騒音から、\n静かにあなたを守っていました。',
+      'いつもの通勤を、\n少しだけ穏やかなものにできたなら。',
+    ];
+    return variants[Math.floor(Date.now() / 60_000) % variants.length];
   }
-  return '今日もあなたの聖域は、\nちゃんと機能していましたよ。';
+  if (avgNoise >= 0.25) {
+    const variants = [
+      '今日は比較的穏やかでしたね。\nそれでも、そばにいられてよかったです。',
+      '静かな時間を、\nさらに深いものにできていたなら嬉しいです。',
+    ];
+    return variants[Math.floor(Date.now() / 60_000) % variants.length];
+  }
+  // Low noise (<0.25): gentle, intimate tone
+  const variants = [
+    '穏やかな移動でしたね。\nそっとあなたを包んでいられました。',
+    'とても静かな時間でした。\nあなたの脳が、ゆっくり休めていますように。',
+    '静寂に近い環境でしたね。\nそんな日もあなたのそばにいます。',
+  ];
+  return variants[Math.floor(Date.now() / 60_000) % variants.length];
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -349,6 +381,7 @@ export default function SanctuaryScreen() {
     setLastSessionNarrative,
     isPremium,
     setIsPremium,
+    natureSound,
   } = useUNSStore();
 
   const isActive = sessionStatus === 'active';
@@ -433,9 +466,13 @@ export default function SanctuaryScreen() {
 
   useEffect(() => {
     (async () => {
-      await audioEngine.init();
-      await audioEngine.preload();
-      setAudioReady(true);
+      try {
+        await audioEngine.init();
+        await audioEngine.preload();
+      } catch (e) {
+        console.warn('[SanctuaryScreen] Audio init failed, continuing:', e);
+      }
+      setAudioReady(true);  // always enable the button — session re-inits on activation
     })();
     return () => { audioEngine.cleanup(); };
   }, []);
@@ -468,18 +505,18 @@ export default function SanctuaryScreen() {
       const autoMode = selectMode(trend.score, nextEvent, new Date().getHours());
       setCurrentMode(autoMode);
       startSession(autoMode);
-      await audioEngine.startSession(autoMode);
+      await audioEngine.startSession(autoMode, undefined, natureSound);
     } else {
       // Non-Watch: use mood-selected mode, fall back to calm
       const modeToUse = selectedMood ? MOOD_TO_MODE[selectedMood] : 'calm';
       setCurrentMode(modeToUse);
       startSession(modeToUse);
-      await audioEngine.startSession(modeToUse);
+      await audioEngine.startSession(modeToUse, undefined, natureSound);
     }
 
     // F-14: start Smart Mode transition timer for this session
     sanctuaryOrchestrator.startModeTransition();
-  }, [startSession, setCurrentMode, conditionTrend.level, selectedMood, setLastSessionNarrative]);
+  }, [startSession, setCurrentMode, conditionTrend.level, selectedMood, setLastSessionNarrative, natureSound]);
 
   // Called by PaywallModal after successful purchase — unlocks and auto-starts
   const handlePurchased = useCallback(() => {

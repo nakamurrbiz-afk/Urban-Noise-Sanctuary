@@ -1,0 +1,59 @@
+# ════════════════════════════════════════════════════════════════
+# Urban Noise Sanctuary — オンボーディング E2E シナリオ
+#
+# 実行方法 (macOS + iOS シミュレーター):
+#   maestro test e2e/01_onboarding.yaml
+#
+# 検証ポイント:
+#   - 全6ステップを順番に遷移できる
+#   - 【Bug1 回帰】「音を聴く」ボタン後に Step 3 へ進めること
+#   - 最終ステップ完了後にメイン画面へ遷移すること
+# ════════════════════════════════════════════════════════════════
+
+appId: urban-noise-sanctuary
+---
+
+# アプリを新規状態で起動（AsyncStorage をクリア）
+- launchApp:
+    clearState: true
+
+# ── Step 1: Welcome ─────────────────────────────────────────────
+- assertVisible: "あなただけの聖域へ"
+- assertVisible: "体験してみる"
+- tapOn: "体験してみる"
+
+# ── Step 2: Experience ──────────────────────────────────────────
+- assertVisible: "音の体験から始まります"
+- assertVisible: "音を聴く"
+- tapOn: "音を聴く"
+
+# iOS マイク権限ダイアログを許可（出た場合のみ）
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# 【Bug1 回帰アサーション】
+# 「音を聴く」後に Step 3 へ遷移できることを確認する
+# ここで止まればバグが再発している
+- assertVisible: "あなたのリズムを感知する"
+- assertVisible: "あとで"
+
+# ── Step 3: Health ──────────────────────────────────────────────
+- tapOn: "あとで"
+
+# ── Step 4: Calendar ────────────────────────────────────────────
+- assertVisible: "次の予定に合わせてギアを変える"
+- tapOn: "スキップ"
+
+# ── Step 5: Notification ────────────────────────────────────────
+- assertVisible: "Mind Weatherをお届けする"
+- tapOn: "あとで"
+
+# ── Step 6: Ready ───────────────────────────────────────────────
+- assertVisible: "Sanctuary、準備完了"
+- tapOn: "聖域へ入る"
+
+# ── メイン画面への遷移確認 ──────────────────────────────────────
+- assertVisible: "Sanctuaryを展開する"

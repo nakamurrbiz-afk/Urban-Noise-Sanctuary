@@ -11,41 +11,18 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUNSStore } from '../store';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
-import type { SanctuarySession } from '../types';
+import {
+  calculateStreak,
+  getCalendarWeekSessions,
+  getWeekDayData,
+  type DayData,
+} from '../utils/sessionStats';
 
 const { width } = Dimensions.get('window');
 
 // ─── 7-day bar chart ─────────────────────────────────────────────────────────
 
-const DAYS_JA = ['月', '火', '水', '木', '金', '土', '日'];
 const CHART_BAR_HEIGHT = 72; // max bar height in pts
-
-interface DayData {
-  label: string;
-  minutes: number;
-  isToday: boolean;
-}
-
-function getWeekData(sessions: SanctuarySession[]): DayData[] {
-  const today = new Date();
-  // getDay(): 0=Sun … 6=Sat → convert to 0=Mon … 6=Sun
-  const todayDow = (today.getDay() + 6) % 7;
-
-  return DAYS_JA.map((label, i) => {
-    const offset = i - todayDow;
-    const d = new Date(today);
-    d.setDate(today.getDate() + offset);
-    d.setHours(0, 0, 0, 0);
-    const dayStart = d.getTime();
-    const dayEnd   = dayStart + 86_400_000;
-
-    const minutes = sessions
-      .filter((s) => s.startedAt >= dayStart && s.startedAt < dayEnd)
-      .reduce((sum, s) => sum + s.durationMs / 60_000, 0);
-
-    return { label, minutes, isToday: i === todayDow };
-  });
-}
 
 function AnimatedBar({
   minutes,
@@ -93,8 +70,7 @@ function AnimatedBar({
   );
 }
 
-function WeekChart({ sessions }: { sessions: SanctuarySession[] }) {
-  const data        = getWeekData(sessions);
+function WeekChart({ data }: { data: DayData[] }) {
   const maxMinutes  = Math.max(1, ...data.map((d) => d.minutes));
   const totalActive = data.filter((d) => d.minutes > 0).length;
 
@@ -196,9 +172,9 @@ const chartStyles = StyleSheet.create({
 
 function TrendText({ trend }: { trend: 'better' | 'same' | 'worse' }) {
   const config = {
-    better: { text: '先週より回復が早くなっています。', color: COLORS.success },
-    same:   { text: '先週と同じペースで維持できています。', color: COLORS.textSecondary },
-    worse:  { text: '今週は負荷が高めでした。来週は休息も大切に。', color: COLORS.warning },
+    better: { text: '先週より、騒音に強くなっています。', color: COLORS.success },
+    same:   { text: '安定した聖域を維持できています。', color: COLORS.textSecondary },
+    worse:  { text: '今週は騒音が多い一週間でした。来週も、守ります。', color: COLORS.warning },
   }[trend];
 
   return <Text style={[styles.trendText, { color: config.color }]}>{config.text}</Text>;
@@ -229,14 +205,16 @@ function StatCard({ label, value, unit }: { label: string; value: string | numbe
 export default function WeeklySummaryScreen() {
   const { sessionHistory, conditionTrend } = useUNSStore();
 
-  // Calculate this week's stats
-  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const thisWeekSessions = sessionHistory.filter((s) => s.startedAt >= oneWeekAgo);
+  // Calendar week (Mon–Sun) stats — uses local timezone consistently
+  const thisWeekSessions = getCalendarWeekSessions(sessionHistory);
+  const weekDayData = getWeekDayData(sessionHistory);
   const totalMs = thisWeekSessions.reduce((sum, s) => sum + s.durationMs, 0);
   const totalMinutes = Math.floor(totalMs / 60_000);
-  const streakDays = Math.min(7, thisWeekSessions.length);
 
-  // Best session
+  // Streak: consecutive calendar days with qualifying sessions (full history)
+  const streakDays = calculateStreak(sessionHistory);
+
+  // Best session this week
   const bestSession = thisWeekSessions.reduce<typeof sessionHistory[0] | null>((best, s) =>
     !best || s.durationMs > best.durationMs ? s : best, null
   );
@@ -263,14 +241,14 @@ export default function WeeklySummaryScreen() {
       </View>
 
       {/* 7-day bar chart */}
-      <WeekChart sessions={thisWeekSessions} />
+      <WeekChart data={weekDayData} />
 
       {/* Best session */}
       {bestSession && (
         <Animated.View entering={FadeInUp.delay(400).duration(600)} style={styles.bestCard}>
-          <Text style={styles.bestLabel}>最も長く守れたセッション</Text>
+          <Text style={styles.bestLabel}>最も深く守れた聖域</Text>
           <Text style={styles.bestDuration}>
-            {Math.floor(bestSession.durationMs / 60_000)}分間 Sanctuary維持
+            {Math.floor(bestSession.durationMs / 60_000)}分間、騒音から守りました
           </Text>
         </Animated.View>
       )}

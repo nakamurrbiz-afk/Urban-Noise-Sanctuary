@@ -88,8 +88,12 @@ function hkGetHRVSamples(opts: HKSampleOptions): Promise<HKHRVSample[]> {
         resolve([]);
         return;
       }
-      // react-native-health returns HealthValue[] — value is the RMSSD in ms
-      resolve(results as unknown as HKHRVSample[]);
+      // Map react-native-health HealthValue[] to our internal type
+      resolve(results.map((r: any) => ({
+        value: r.value,
+        startDate: r.startDate,
+        endDate: r.endDate,
+      })));
     });
   });
 }
@@ -142,7 +146,12 @@ class HRVEngine {
     if (!this.permissionsGranted) {
       this.permissionsGranted = await hkInit();
     }
-    if (!this.permissionsGranted) return null;
+    if (!this.permissionsGranted) {
+      // Update cache timestamp even on permission denial to avoid
+      // hammering HealthKit init on every call
+      this.cacheTimestamp = Date.now();
+      return null;
+    }
 
     const now = Date.now();
     // Return cached value if still fresh (avoids hammering HealthKit)

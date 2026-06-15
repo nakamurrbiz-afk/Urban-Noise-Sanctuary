@@ -13,7 +13,11 @@ import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
 import { useUNSStore } from '../store';
 import { AudioDebugPanel } from '../components/AudioDebugPanel';
 import { cancelMindWeather } from '../engines/NotificationEngine';
-import { restorePurchases } from '../engines/PurchaseEngine';
+import {
+  restorePurchases,
+  getThisMonthUsageMs,
+  MONTHLY_FREE_LIMIT_MS,
+} from '../engines/PurchaseEngine';
 
 const APP_VERSION = '0.1.0 (build 1)';
 
@@ -125,11 +129,20 @@ export default function SettingsScreen() {
     setHapticEnabled,
     natureSound,
     setNatureSound,
+    binauralEnabled,
+    setBinauralEnabled,
+    bellChimeEnabled,
+    setBellChimeEnabled,
     isPremium,
     setIsPremium,
+    sessionHistory,
   } = useUNSStore();
 
   const [isRestoring, setIsRestoring] = useState(false);
+
+  const usedMs = getThisMonthUsageMs(sessionHistory);
+  const usedMinutes = Math.floor(usedMs / 60_000);
+  const usageRatio = Math.min(1, usedMs / MONTHLY_FREE_LIMIT_MS);
 
   // When notifications are disabled, cancel any pending Mind Weather notification
   const handleNotificationToggle = useCallback((enabled: boolean) => {
@@ -195,6 +208,18 @@ export default function SettingsScreen() {
             value={hapticEnabled}
             onValueChange={setHapticEnabled}
           />
+          <View style={styles.divider} />
+          <ToggleRow
+            label="バイノーラルビート"
+            value={binauralEnabled}
+            onValueChange={setBinauralEnabled}
+          />
+          <View style={styles.divider} />
+          <ToggleRow
+            label="効果音（ベルチャイム）"
+            value={bellChimeEnabled}
+            onValueChange={setBellChimeEnabled}
+          />
         </View>
 
         {/* ── プライバシー ── */}
@@ -217,6 +242,24 @@ export default function SettingsScreen() {
             label="プラン"
             value={isPremium ? 'Premium ◉' : '無料（月30分）'}
           />
+          {!isPremium && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>今月の使用量</Text>
+                <Text style={styles.rowValue}>{usedMinutes} / 30分</Text>
+              </View>
+              <View style={styles.usageBarContainer}>
+                <View style={styles.usageBarTrack}>
+                  <View style={[
+                    styles.usageBarFill,
+                    { width: `${usageRatio * 100}%` },
+                    usageRatio > 0.67 && { backgroundColor: COLORS.warning },
+                  ]} />
+                </View>
+              </View>
+            </>
+          )}
           <View style={styles.divider} />
           <Pressable
             style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
@@ -237,6 +280,21 @@ export default function SettingsScreen() {
           <SettingsRow label="利用規約" onPress={() => {}} />
           <View style={styles.divider} />
           <SettingsRow label="プライバシーポリシー" onPress={() => {}} />
+          <View style={styles.divider} />
+          <SettingsRow
+            label="医療免責事項"
+            onPress={() => Alert.alert(
+              '医療免責事項',
+              'Urban Noise Sanctuary は医療機器ではなく、'
+              + '医学的な診断・治療・予防を目的としたものではありません。\n\n'
+              + 'バイノーラルビートはリラクゼーション目的の音響効果であり、'
+              + '科学的に確立された治療法ではありません。\n\n'
+              + 'てんかん、不安障害、PTSD、聴覚過敏等の症状がある方は、'
+              + '使用前に医療専門家にご相談ください。\n\n'
+              + '体調に異変を感じた場合は直ちに使用を中止してください。',
+              [{ text: 'OK' }]
+            )}
+          />
           <View style={styles.divider} />
           <SettingsRow
             label="音声クレジット"
@@ -340,5 +398,20 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     opacity: 0.4,
     letterSpacing: 1,
+  },
+  usageBarContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: 14,
+  },
+  usageBarTrack: {
+    height: 2,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 1,
+    overflow: 'hidden' as const,
+  },
+  usageBarFill: {
+    height: '100%' as unknown as number,
+    borderRadius: 1,
+    backgroundColor: COLORS.shieldCore,
   },
 });

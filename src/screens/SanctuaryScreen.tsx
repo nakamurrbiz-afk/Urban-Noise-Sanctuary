@@ -26,7 +26,7 @@ import { useUNSStore } from '../store';
 import { audioEngine } from '../engines/AudioEngine';
 import { useMicNoise } from '../engines/MicEngine';
 import { selectMode, getNextEventTitle } from '../engines/ContextEngine';
-import { isFreeTierExhausted } from '../engines/PurchaseEngine';
+import { isFreeTierExhausted, remainingFreeMinutes } from '../engines/PurchaseEngine';
 import { hrvEngine } from '../engines/HRVEngine';
 import { sanctuaryOrchestrator } from '../engines/SanctuaryOrchestrator';
 import { HRVStaleBanner } from '../components/HRVStaleBanner';
@@ -119,7 +119,7 @@ function ModeSelector({
   currentMode: SanctuaryMode;
   onSelect: (mode: SanctuaryMode) => void;
 }) {
-  const modes: SanctuaryMode[] = ['calm', 'focus', 'activate'];
+  const modes: SanctuaryMode[] = ['calm', 'focus', 'activate', 'stillness'];
   return (
     <View style={modeStyles.container}>
       {modes.map((mode) => {
@@ -382,10 +382,13 @@ export default function SanctuaryScreen() {
     isPremium,
     setIsPremium,
     natureSound,
+    binauralEnabled,
+    bellChimeEnabled,
   } = useUNSStore();
 
   const isActive = sessionStatus === 'active';
   const lastSession = sessionHistory[0];
+  const remaining = remainingFreeMinutes(sessionHistory);
 
   // AbsorbTrigger: increments on every spike → ShieldDisplay fires absorb flash
   const [absorbTrigger, setAbsorbTrigger] = useState(0);
@@ -414,6 +417,15 @@ export default function SanctuaryScreen() {
 
   // Paywall state — shown when free tier is exhausted
   const [showPaywall, setShowPaywall] = useState(false);
+
+  // Purchase celebration — brief overlay after successful purchase
+  const [showPurchaseCelebration, setShowPurchaseCelebration] = useState(false);
+  const celebrationOpacity = useSharedValue(0);
+  const celebrationScale = useSharedValue(0.95);
+  const celebrationAnimStyle = useAnimatedStyle(() => ({
+    opacity: celebrationOpacity.value,
+    transform: [{ scale: celebrationScale.value }],
+  }));
 
   useEffect(() => {
     if (isActive) {
@@ -505,25 +517,33 @@ export default function SanctuaryScreen() {
       const autoMode = selectMode(trend.score, nextEvent, new Date().getHours());
       setCurrentMode(autoMode);
       startSession(autoMode);
-      await audioEngine.startSession(autoMode, undefined, natureSound);
+      await audioEngine.startSession(autoMode, undefined, natureSound, binauralEnabled, bellChimeEnabled);
     } else {
       // Non-Watch: use mood-selected mode, fall back to calm
       const modeToUse = selectedMood ? MOOD_TO_MODE[selectedMood] : 'calm';
       setCurrentMode(modeToUse);
       startSession(modeToUse);
-      await audioEngine.startSession(modeToUse, undefined, natureSound);
+      await audioEngine.startSession(modeToUse, undefined, natureSound, binauralEnabled, bellChimeEnabled);
     }
 
     // F-14: start Smart Mode transition timer for this session
     sanctuaryOrchestrator.startModeTransition();
   }, [startSession, setCurrentMode, conditionTrend.level, selectedMood, setLastSessionNarrative, natureSound]);
 
-  // Called by PaywallModal after successful purchase — unlocks and auto-starts
+  // Called by PaywallModal after successful purchase — celebration then auto-start
   const handlePurchased = useCallback(() => {
     setIsPremium(true);
     setShowPaywall(false);
-    // handleActivate will now pass the free-tier gate since isPremium is true
-    handleActivate();
+    setShowPurchaseCelebration(true);
+    celebrationOpacity.value = withTiming(1, { duration: 600 });
+    celebrationScale.value = withTiming(1, { duration: 600 });
+    setTimeout(() => {
+      celebrationOpacity.value = withTiming(0, { duration: 500 });
+      setTimeout(() => {
+        setShowPurchaseCelebration(false);
+        handleActivate();
+      }, 500);
+    }, 2500);
   }, [setIsPremium, handleActivate]);
 
   const handleDeactivate = useCallback(async () => {
@@ -570,8 +590,8 @@ export default function SanctuaryScreen() {
 
   const handleModeSelect = useCallback(async (mode: SanctuaryMode) => {
     setCurrentMode(mode);
-    if (isActive) await audioEngine.switchMode(mode);
-  }, [isActive, setCurrentMode]);
+    if (isActive) await audioEngine.switchMode(mode, binauralEnabled);
+  }, [isActive, setCurrentMode, binauralEnabled]);
 
   return (
     <View style={styles.root}>
@@ -635,6 +655,20 @@ export default function SanctuaryScreen() {
         <ModeSelector currentMode={currentMode} onSelect={handleModeSelect} />
       </View>
 
+      {/* Free tier remaining — visible only to free users when idle */}
+      {!isPremium && !isActive && (
+        <View style={styles.remainingArea}>
+          <Text style={[
+            styles.remainingText,
+            { color: remaining <= 10 ? COLORS.warning : COLORS.textMuted },
+          ]}>
+            {remaining === 0
+              ? '今月の利用上限に達しました'
+              : `今月の残り ── ${remaining}m`}
+          </Text>
+        </View>
+      )}
+
       {/* CTA */}
       <View style={styles.ctaArea}>
         {isActive ? (
@@ -663,6 +697,8 @@ export default function SanctuaryScreen() {
           session={lastSession}
           narrative={lastSessionNarrative ?? undefined}
           onDismiss={dismissCompletion}
+          remainingMinutes={remaining}
+          isPremium={isPremium}
         />
       )}
 
@@ -681,6 +717,18 @@ export default function SanctuaryScreen() {
         onClose={() => setShowPaywall(false)}
         onPurchased={handlePurchased}
       />
+
+      {/* Purchase celebration — brief overlay after successful purchase */}
+      {showPurchaseCelebration && (
+        <Animated.View style={[StyleSheet.absoluteFill, styles.celebrationOverlay, celebrationAnimStyle]}>
+          <LinearGradient
+            colors={[COLORS.bg + 'F8', COLORS.bgSecondary + 'FC']}
+            style={StyleSheet.absoluteFill}
+          />
+          <Text style={styles.celebrationSymbol}>✦</Text>
+          <Text style={styles.celebrationText}>聖域が、永遠にあなたのものに。</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -706,6 +754,8 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.lg,
   },
   modeDesc: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, letterSpacing: 1.2 },
+  remainingArea: { alignItems: 'center' as const, paddingBottom: SPACING.sm },
+  remainingText: { ...TYPOGRAPHY.caption, letterSpacing: 1.2 },
   ctaArea: {
     paddingHorizontal: SPACING.xl,
     paddingBottom: 48,
@@ -731,4 +781,21 @@ const styles = StyleSheet.create({
     borderColor: COLORS.textMuted,
   },
   deactivateText: { ...TYPOGRAPHY.heading3, color: COLORS.textSecondary, letterSpacing: 1.5 },
+  celebrationOverlay: {
+    zIndex: 200,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    gap: SPACING.lg,
+  },
+  celebrationSymbol: {
+    fontSize: 28,
+    color: COLORS.shieldGold,
+    letterSpacing: 4,
+  },
+  celebrationText: {
+    ...TYPOGRAPHY.ritual,
+    color: COLORS.textPrimary,
+    textAlign: 'center' as const,
+    letterSpacing: 2,
+  },
 });

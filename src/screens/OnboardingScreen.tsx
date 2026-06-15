@@ -60,7 +60,7 @@ const STEPS: Step[] = [
     symbol: '◉',
     headline: 'あなただけの聖域へ',
     body:
-      '通勤が、消える。\n電車が、森になる。\n\nUrban Noise Sanctuary は、\n騒音をあなただけの聖域に変えます。',
+      '通勤が、消える。\n電車が、森になる。\n\nUrban Noise Sanctuary は、\n騒音をあなただけの聖域に変えます。\n\n※ 本アプリは医療機器・医療行為ではありません。\n体調に不安がある方は医療専門家にご相談ください。',
     cta: '体験してみる',
   },
   {

@@ -66,27 +66,35 @@ export const ANIMATION = {
 export const MODE_CONFIG = {
   calm: {
     label: 'Calm',
-    labelJa: 'コルチゾール・デトックス',
+    labelJa: 'やすらぎ',
     color: '#3D82C8',
     binauralHz: 6,
-    droneIntensity: 0.35,
+    droneIntensity: 0.32,
     description: '電車が、深い森になる',
   },
   focus: {
     label: 'Focus',
-    labelJa: 'α波フォーカス',
+    labelJa: '集中',
     color: '#6A5AE0',
     binauralHz: 12,
-    droneIntensity: 0.25,
+    droneIntensity: 0.28,
     description: '雑音が消え、思考が澄む',
   },
   activate: {
     label: 'Activate',
-    labelJa: 'アドレナリン・プレップ',
+    labelJa: '活力',
     color: '#F05A28',
     binauralHz: 18,
-    droneIntensity: 0.15,
+    droneIntensity: 0.22,
     description: '到着前に、スイッチが入る',
+  },
+  stillness: {
+    label: 'Stillness',
+    labelJa: '静寂',
+    color: '#5A7A8A',
+    binauralHz: 0,
+    droneIntensity: 0,
+    description: 'ほぼ無音。静けさそのものが、聖域になる',
   },
 } as const;
 

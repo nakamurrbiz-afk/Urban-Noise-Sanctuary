@@ -17,6 +17,11 @@ import {
   getWeekDayData,
   type DayData,
 } from '../utils/sessionStats';
+import {
+  remainingFreeMinutes,
+  getThisMonthUsageMs,
+  MONTHLY_FREE_LIMIT_MS,
+} from '../engines/PurchaseEngine';
 
 const { width } = Dimensions.get('window');
 
@@ -203,7 +208,13 @@ function StatCard({ label, value, unit }: { label: string; value: string | numbe
 }
 
 export default function WeeklySummaryScreen() {
-  const { sessionHistory, conditionTrend } = useUNSStore();
+  const { sessionHistory, conditionTrend, isPremium } = useUNSStore();
+
+  // Monthly usage (free tier tracking)
+  const usedMs = getThisMonthUsageMs(sessionHistory);
+  const monthRemaining = remainingFreeMinutes(sessionHistory);
+  const monthUsedMinutes = Math.floor(usedMs / 60_000);
+  const usageRatio = Math.min(1, usedMs / MONTHLY_FREE_LIMIT_MS);
 
   // Calendar week (Mon–Sun) stats — uses local timezone consistently
   const thisWeekSessions = getCalendarWeekSessions(sessionHistory);
@@ -239,6 +250,28 @@ export default function WeeklySummaryScreen() {
         <StatCard label="合計保護時間" value={totalMinutes} unit="分" />
         <StatCard label="継続日数" value={streakDays} unit="日" />
       </View>
+
+      {/* Monthly usage — free tier only */}
+      {!isPremium && (
+        <Animated.View entering={FadeInUp.delay(250).duration(600)} style={usageStyles.container}>
+          <Text style={usageStyles.title}>今月の利用状況</Text>
+          <View style={usageStyles.barTrack}>
+            <View style={[
+              usageStyles.barFill,
+              { width: `${usageRatio * 100}%` },
+              monthRemaining <= 10 && { backgroundColor: COLORS.warning },
+            ]} />
+          </View>
+          <Text style={usageStyles.label}>{monthUsedMinutes}分 / 30分 使用済み</Text>
+          {monthRemaining <= 10 && (
+            <Text style={usageStyles.nudge}>
+              {monthRemaining === 0
+                ? '今月の聖域を使い切りました。Premiumで無制限に。'
+                : 'Premiumで制限なく聖域を守れます'}
+            </Text>
+          )}
+        </Animated.View>
+      )}
 
       {/* 7-day bar chart */}
       <WeekChart data={weekDayData} />
@@ -322,4 +355,44 @@ const styles = StyleSheet.create({
   noteText: { ...TYPOGRAPHY.caption, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20 },
   noteSubText: { ...TYPOGRAPHY.caption, color: COLORS.textMuted + '80', textAlign: 'center' },
   spacer: { height: 40 },
+});
+
+const usageStyles = StyleSheet.create({
+  container: {
+    marginHorizontal: SPACING.lg,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 16,
+    padding: SPACING.lg,
+    marginBottom: SPACING.xl,
+    borderWidth: 0.5,
+    borderColor: COLORS.bgSecondary,
+    gap: SPACING.sm,
+  },
+  title: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    letterSpacing: 2,
+  },
+  barTrack: {
+    height: 3,
+    backgroundColor: COLORS.bgSecondary,
+    borderRadius: 2,
+    overflow: 'hidden' as const,
+  },
+  barFill: {
+    height: '100%' as unknown as number,
+    borderRadius: 2,
+    backgroundColor: COLORS.shieldCore,
+  },
+  label: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    letterSpacing: 0.5,
+  },
+  nudge: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    letterSpacing: 0.5,
+    marginTop: SPACING.xs,
+  },
 });

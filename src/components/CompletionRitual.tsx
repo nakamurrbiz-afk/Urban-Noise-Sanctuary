@@ -21,6 +21,8 @@ interface Props {
   session: SanctuarySession;
   onDismiss: () => void;
   narrative?: string;   // poetic session summary; undefined = no extra line
+  remainingMinutes?: number;  // free tier minutes left this month
+  isPremium?: boolean;
 }
 
 function formatDuration(ms: number): string {
@@ -30,13 +32,14 @@ function formatDuration(ms: number): string {
   return `${minutes}分${seconds > 0 ? `${seconds}秒` : ''}`;
 }
 
-export function CompletionRitual({ session, onDismiss, narrative }: Props) {
+export function CompletionRitual({ session, onDismiss, narrative, remainingMinutes, isPremium }: Props) {
   const containerOpacity = useSharedValue(0);
   const line1Opacity = useSharedValue(0);
   const line2Opacity = useSharedValue(0);
   const line3Opacity = useSharedValue(0);
   const narrativeOpacity = useSharedValue(0);
   const summaryOpacity = useSharedValue(0);
+  const remainingOpacity = useSharedValue(0);
 
   const viewShotRef = useRef<ViewShot>(null);
 
@@ -68,6 +71,7 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
     // Narrative fades in gently after the three ritual lines settle
     narrativeOpacity.value = withDelay(2900, withTiming(1, { duration: 1200, easing: Easing.out(Easing.sin) }));
     summaryOpacity.value   = withDelay(narrative ? 4200 : 3000, withTiming(1, { duration: 800 }));
+    remainingOpacity.value = withDelay(narrative ? 5400 : 4200, withTiming(1, { duration: 800 }));
   }, []);
 
   const containerStyle  = useAnimatedStyle(() => ({ opacity: containerOpacity.value }));
@@ -76,6 +80,7 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
   const line3Style      = useAnimatedStyle(() => ({ opacity: line3Opacity.value }));
   const narrativeStyle  = useAnimatedStyle(() => ({ opacity: narrativeOpacity.value }));
   const summaryStyle    = useAnimatedStyle(() => ({ opacity: summaryOpacity.value }));
+  const remainingStyle  = useAnimatedStyle(() => ({ opacity: remainingOpacity.value }));
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, containerStyle]}>
@@ -114,6 +119,26 @@ export function CompletionRitual({ session, onDismiss, narrative }: Props) {
           <Text style={styles.summaryDuration}>{duration}間　保護しました</Text>
           <View style={styles.divider} />
         </Animated.View>
+
+        {/* Free tier remaining — gentle nudge when low */}
+        {!isPremium && remainingMinutes !== undefined && (
+          <Animated.View style={[styles.remainingInfo, remainingStyle]}>
+            <Text style={[styles.remainingCount, {
+              color: remainingMinutes <= 10 ? COLORS.warning : COLORS.textMuted,
+            }]}>
+              {remainingMinutes === 0
+                ? '今月の聖域を使い切りました'
+                : `今月の残り: ${remainingMinutes}m`}
+            </Text>
+            {remainingMinutes <= 10 && (
+              <Text style={styles.remainingNudge}>
+                {remainingMinutes === 0
+                  ? 'Premiumで、いつでも聖域に入れます'
+                  : 'Premiumで、毎日の聖域を守りませんか？'}
+              </Text>
+            )}
+          </Animated.View>
+        )}
 
         {/* Share + Dismiss */}
         <Animated.View style={[styles.actions, summaryStyle]}>
@@ -223,6 +248,19 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     letterSpacing: 2,
+  },
+  remainingInfo: {
+    alignItems: 'center' as const,
+    gap: SPACING.xs,
+  },
+  remainingCount: {
+    ...TYPOGRAPHY.caption,
+    letterSpacing: 1,
+  },
+  remainingNudge: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    letterSpacing: 0.5,
   },
   offScreen: {
     position: 'absolute',

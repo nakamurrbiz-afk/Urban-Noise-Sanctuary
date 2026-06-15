@@ -2,7 +2,7 @@
  * UNS Audio Generator — v2 Spatial Audio
  *
  * Generates stereo WAV files with algorithmic reverb, spatial processing,
- * and enriched spectral content for all 7 audio assets.
+ * and enriched spectral content for all 8 audio assets.
  *
  * Key improvements over v1:
  *   - Stereo output with L/R decorrelation for spatial width
@@ -332,102 +332,159 @@ function createGranular(seed) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * drone_deep.wav — 60s loop
+ * drone_calm.wav — 60s loop — "Forest cathedral" (40–120 Hz dominant)
  *
- * Bandpass-filtered noise bands centered at 100/50/200/150 Hz.
- * Continuous spectrum — sounds like a deep ambient rumble, not a pitched tone.
- * L/R channels use independent noise seeds for natural stereo decorrelation.
- * Dual breathing LFOs with mutually prime periods prevent pattern repetition.
- * tanh waveshaping adds even harmonic warmth to the mixed signal.
+ * Deep, enveloping drone for Calm mode. Felt more than heard.
+ * L/R channels use independent noise seeds (no Hz offset — centered/enveloping).
+ * Dual breathing LFOs: slow swell (25s) + sub-bass wave (59s) on band 2 only.
+ * tanh waveshaping at drive 2.5 for maximum even-harmonic warmth.
+ * Cathedral-like reverb: long tail (wetMix 0.45, feedback 0.90).
  */
-function genDroneDeep() {
+function genDroneCalm() {
   const DURATION = 60;
   const N = DURATION * SAMPLE_RATE;
   const left  = new Float32Array(N);
   const right = new Float32Array(N);
 
-  // 4 noise bands per channel — independent L/R seeds
+  // 4 noise bands per channel — independent L/R seeds, no Hz offset (centered)
   const bandsL = [
-    { gen: createNoiseBand(0xD001, 100, 2.0), amp: 0.45 },  // fundamental body
-    { gen: createNoiseBand(0xD002,  50, 3.0), amp: 0.30 },  // sub-bass weight
-    { gen: createNoiseBand(0xD003, 200, 1.5), amp: 0.15 },  // upper warmth (wide)
-    { gen: createNoiseBand(0xD004, 150, 2.0), amp: 0.10 },  // fill 100–200 Hz
+    { gen: createNoiseBand(0xCA01,  60, 2.5), amp: 0.45 },  // deep rumble (felt, not heard)
+    { gen: createNoiseBand(0xCA02,  40, 3.0), amp: 0.25 },  // sub-bass floor
+    { gen: createNoiseBand(0xCA03, 120, 1.5), amp: 0.18 },  // warmth
+    { gen: createNoiseBand(0xCA04, 180, 2.0), amp: 0.08 },  // upper warmth
   ];
   const bandsR = [
-    { gen: createNoiseBand(0xE001, 100, 2.0), amp: 0.45 },
-    { gen: createNoiseBand(0xE002,  50, 3.0), amp: 0.30 },
-    { gen: createNoiseBand(0xE003, 200, 1.5), amp: 0.15 },
-    { gen: createNoiseBand(0xE004, 150, 2.0), amp: 0.10 },
+    { gen: createNoiseBand(0xCA05,  60, 2.5), amp: 0.45 },
+    { gen: createNoiseBand(0xCA06,  40, 3.0), amp: 0.25 },
+    { gen: createNoiseBand(0xCA07, 120, 1.5), amp: 0.18 },
+    { gen: createNoiseBand(0xCA08, 180, 2.0), amp: 0.08 },
   ];
 
   for (let i = 0; i < N; i++) {
     const t = i / SAMPLE_RATE;
     const fade = loopFade(i, N);
 
-    // Breathing LFOs — mutually prime periods (14.3s × 32.3s → no repeat in 60s)
-    const lfo    = 1 + 0.12 * sine(t, 0.07);
-    const subLfo = 1 + 0.08 * sine(t, 0.031);
+    // LFO-A: 0.04 Hz (25s cycle), depth 0.18 — breath-like swell
+    const lfoA = 1 + 0.18 * sine(t, 0.04);
+    // LFO-B: 0.017 Hz (59s cycle), depth 0.12 — sub-bass wave (band 2 only)
+    const lfoB = 1 + 0.12 * sine(t, 0.017);
 
     // Mix noise bands
     let mixL = 0, mixR = 0;
     for (let b = 0; b < bandsL.length; b++) {
-      const modAmp = b === 1 ? subLfo : 1; // sub-bass band gets its own LFO
+      const modAmp = b === 1 ? lfoB : 1; // sub-bass band gets its own LFO
       mixL += bandsL[b].gen() * bandsL[b].amp * modAmp;
       mixR += bandsR[b].gen() * bandsR[b].amp * modAmp;
     }
 
-    // Waveshaping: soft-clip for even harmonic warmth
-    const shapedL = tanhShape(mixL, 1.8) * 0.85;
-    const shapedR = tanhShape(mixR, 1.8) * 0.85;
+    // Waveshaping: tanh drive 2.5 for maximum even-harmonic warmth
+    const shapedL = tanhShape(mixL, 2.5) * 0.85;
+    const shapedR = tanhShape(mixR, 2.5) * 0.85;
 
-    left[i]  = fade * lfo * shapedL;
-    right[i] = fade * lfo * shapedR;
+    left[i]  = fade * lfoA * shapedL;
+    right[i] = fade * lfoA * shapedR;
   }
 
-  const reverbed = applyReverb({ left, right }, { wetMix: 0.30, feedback: 0.88, loop: true });
-  writeWav('drone_deep.wav', reverbed);
+  const reverbed = applyReverb({ left, right }, { wetMix: 0.45, feedback: 0.90, loop: true });
+  writeWav('drone_calm.wav', reverbed);
 }
 
 /**
- * drone_mid.wav — 60s loop
+ * drone_focus.wav — 60s loop — "Clear tunnel" (150–400 Hz, clean)
  *
- * Bandpass-filtered noise bands at 150/200/300/700 Hz.
- * L/R center frequencies offset by +3 Hz for chorus-like stereo width.
- * Formant resonators (300/700 Hz) applied to the mixed noise signal
- * for vowel-like warmth — the same resonators as v1 but now fed organic noise.
- * Tremolo LFO preserved at 0.2 Hz for AudioEngine volume curve compatibility.
+ * Clean, clinical drone for Focus mode. No waveshaping — stays pristine.
+ * L/R +2 Hz offset (narrower stereo than calm = tunnel feel).
+ * Subtle tremolo at 0.15 Hz, depth 0.04 (barely perceptible = stability).
+ * Formant resonators at 250 Hz Q=12 and 350 Hz Q=10 (tight "tunnel" of sound).
+ * Tight, short reverb: wetMix 0.15, feedback 0.82.
  */
-function genDroneMid() {
+function genDroneFocus() {
   const DURATION = 60;
   const N = DURATION * SAMPLE_RATE;
   const left  = new Float32Array(N);
   const right = new Float32Array(N);
 
-  // Noise bands — L/R offset +3Hz for chorus-like stereo spread
+  // Noise bands — L/R offset +2 Hz for narrow tunnel-like stereo
   const bandsL = [
-    { gen: createNoiseBand(0xF001, 150, 2.0), amp: 0.32 },  // low body
-    { gen: createNoiseBand(0xF002, 200, 2.0), amp: 0.28 },  // mid body
-    { gen: createNoiseBand(0xF003, 300, 3.0), amp: 0.12 },  // upper warmth
-    { gen: createNoiseBand(0xF004, 700, 4.0), amp: 0.06 },  // presence / air
+    { gen: createNoiseBand(0xFC01, 180, 3.0), amp: 0.35 },  // clean fundamental
+    { gen: createNoiseBand(0xFC02, 250, 3.5), amp: 0.25 },  // mid clarity
+    { gen: createNoiseBand(0xFC03, 320, 4.0), amp: 0.15 },  // presence
+    { gen: createNoiseBand(0xFC04, 400, 5.0), amp: 0.05 },  // air
   ];
   const bandsR = [
-    { gen: createNoiseBand(0xF101, 153, 2.0), amp: 0.32 },  // +3 Hz offset
-    { gen: createNoiseBand(0xF102, 203, 2.0), amp: 0.28 },
-    { gen: createNoiseBand(0xF103, 303, 3.0), amp: 0.12 },
-    { gen: createNoiseBand(0xF104, 703, 4.0), amp: 0.06 },
+    { gen: createNoiseBand(0xFC05, 182, 3.0), amp: 0.35 },  // +2 Hz offset
+    { gen: createNoiseBand(0xFC06, 252, 3.5), amp: 0.25 },
+    { gen: createNoiseBand(0xFC07, 322, 4.0), amp: 0.15 },
+    { gen: createNoiseBand(0xFC08, 402, 5.0), amp: 0.05 },
   ];
 
-  // Formant resonators — adds vowel-like resonance to the noise texture
-  const resL300 = createResonator(300, 8);
-  const resL700 = createResonator(700, 10);
-  const resR300 = createResonator(305, 8);   // slightly detuned for stereo
-  const resR700 = createResonator(695, 10);
+  // Formant resonators — tight "tunnel" of sound
+  const resL250 = createResonator(250, 12);
+  const resL350 = createResonator(350, 10);
+  const resR250 = createResonator(250, 12);
+  const resR350 = createResonator(350, 10);
 
   for (let i = 0; i < N; i++) {
     const t = i / SAMPLE_RATE;
     const fade = loopFade(i, N);
 
-    const tremolo = 1 + 0.06 * sine(t, 0.2);
+    // Tremolo: 0.15 Hz, depth 0.04 (barely perceptible = stability)
+    const tremolo = 1 + 0.04 * sine(t, 0.15);
+
+    // Mix noise bands (no waveshaping — stay clean/clinical)
+    let mixL = 0, mixR = 0;
+    for (let b = 0; b < bandsL.length; b++) {
+      mixL += bandsL[b].gen() * bandsL[b].amp;
+      mixR += bandsR[b].gen() * bandsR[b].amp;
+    }
+
+    // Formant coloring on mixed noise — tight tunnel resonance
+    const formantL = resL250(mixL) * 0.15 + resL350(mixL) * 0.10;
+    const formantR = resR250(mixR) * 0.15 + resR350(mixR) * 0.10;
+
+    left[i]  = fade * tremolo * (mixL + formantL);
+    right[i] = fade * tremolo * (mixR + formantR);
+  }
+
+  const reverbed = applyReverb({ left, right }, { wetMix: 0.15, feedback: 0.82, loop: true });
+  writeWav('drone_focus.wav', reverbed);
+}
+
+/**
+ * drone_activate.wav — 60s loop — "Morning light" (200–600 Hz, bright)
+ *
+ * Bright, expansive drone for Activate mode. Widest stereo image.
+ * L/R +5 Hz offset (widest stereo = expansive/open feel).
+ * Energy pulse: 0.5 Hz LFO, depth 0.06 (subtle rhythmic push).
+ * Mild tanh drive 1.2 to prevent harshness while adding warmth.
+ * Crisp reverb: wetMix 0.20, feedback 0.84.
+ */
+function genDroneActivate() {
+  const DURATION = 60;
+  const N = DURATION * SAMPLE_RATE;
+  const left  = new Float32Array(N);
+  const right = new Float32Array(N);
+
+  // Noise bands — L/R offset +5 Hz for wide, expansive stereo
+  const bandsL = [
+    { gen: createNoiseBand(0xAC01, 250, 2.0), amp: 0.30 },  // mid presence
+    { gen: createNoiseBand(0xAC02, 350, 2.5), amp: 0.22 },  // body
+    { gen: createNoiseBand(0xAC03, 480, 3.0), amp: 0.16 },  // brightness
+    { gen: createNoiseBand(0xAC04, 600, 4.0), amp: 0.08 },  // air / sparkle
+  ];
+  const bandsR = [
+    { gen: createNoiseBand(0xAC05, 255, 2.0), amp: 0.30 },  // +5 Hz offset
+    { gen: createNoiseBand(0xAC06, 355, 2.5), amp: 0.22 },
+    { gen: createNoiseBand(0xAC07, 485, 3.0), amp: 0.16 },
+    { gen: createNoiseBand(0xAC08, 605, 4.0), amp: 0.08 },
+  ];
+
+  for (let i = 0; i < N; i++) {
+    const t = i / SAMPLE_RATE;
+    const fade = loopFade(i, N);
+
+    // Energy pulse: 0.5 Hz LFO, depth 0.06 (subtle rhythmic push)
+    const pulse = 1 + 0.06 * sine(t, 0.5);
 
     // Mix noise bands
     let mixL = 0, mixR = 0;
@@ -436,16 +493,16 @@ function genDroneMid() {
       mixR += bandsR[b].gen() * bandsR[b].amp;
     }
 
-    // Formant coloring on mixed noise
-    const formantL = resL300(mixL) * 0.15 + resL700(mixL) * 0.10;
-    const formantR = resR300(mixR) * 0.15 + resR700(mixR) * 0.10;
+    // Waveshaping: mild tanh drive 1.2 to prevent harshness
+    const shapedL = tanhShape(mixL, 1.2) * 0.85;
+    const shapedR = tanhShape(mixR, 1.2) * 0.85;
 
-    left[i]  = fade * tremolo * (mixL + formantL);
-    right[i] = fade * tremolo * (mixR + formantR);
+    left[i]  = fade * pulse * shapedL;
+    right[i] = fade * pulse * shapedR;
   }
 
-  const reverbed = applyReverb({ left, right }, { wetMix: 0.25, feedback: 0.88, loop: true });
-  writeWav('drone_mid.wav', reverbed);
+  const reverbed = applyReverb({ left, right }, { wetMix: 0.20, feedback: 0.84, loop: true });
+  writeWav('drone_activate.wav', reverbed);
 }
 
 /**
@@ -744,8 +801,9 @@ if (!fs.existsSync(OUT_DIR)) {
 
 const start = Date.now();
 
-genDroneDeep();
-genDroneMid();
+genDroneCalm();
+genDroneFocus();
+genDroneActivate();
 genBellChime();
 genNatureBed();
 genShieldOpen();
@@ -753,5 +811,5 @@ genShieldClose();
 genOnboardingDeepForest();
 
 const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-console.log(`\n✓ All 7 files generated in ${elapsed}s (stereo, reverbed)`);
+console.log(`\n✓ All 8 files generated in ${elapsed}s (stereo, reverbed)`);
 console.log('\nNext: node scripts/generate-audio.js → eas build --profile development --platform ios');

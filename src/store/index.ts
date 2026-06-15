@@ -39,6 +39,8 @@ interface UNSStore {
   notificationsEnabled: boolean;
   hapticEnabled: boolean;
   natureSound: NatureSound;
+  binauralEnabled: boolean;
+  bellChimeEnabled: boolean;
 
   // ─── Subscription ────────────────────────────────────────
   // isPremium is a local cache — always re-verified from RevenueCat at launch.
@@ -73,6 +75,8 @@ interface UNSStore {
   setNotificationsEnabled: (enabled: boolean) => void;
   setHapticEnabled: (enabled: boolean) => void;
   setNatureSound: (sound: NatureSound) => void;
+  setBinauralEnabled: (enabled: boolean) => void;
+  setBellChimeEnabled: (enabled: boolean) => void;
   setIsPremium: (premium: boolean) => void;
   _setHasHydrated: (hydrated: boolean) => void;
 }
@@ -101,6 +105,8 @@ export const useUNSStore = create<UNSStore>()(
       notificationsEnabled: true,
       hapticEnabled: true,
       natureSound: 'wind',
+      binauralEnabled: true,
+      bellChimeEnabled: true,
       isPremium: false,
       isDebugUnlocked: false,
       lastSessionDebugLog: null,
@@ -163,6 +169,8 @@ export const useUNSStore = create<UNSStore>()(
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setHapticEnabled: (enabled) => set({ hapticEnabled: enabled }),
       setNatureSound: (sound) => set({ natureSound: sound }),
+      setBinauralEnabled: (enabled) => set({ binauralEnabled: enabled }),
+      setBellChimeEnabled: (enabled) => set({ bellChimeEnabled: enabled }),
       setIsPremium: (premium) => set({ isPremium: premium }),
       _setHasHydrated: (hydrated) => set({ _hasHydrated: hydrated }),
     }),
@@ -182,6 +190,8 @@ export const useUNSStore = create<UNSStore>()(
         notificationsEnabled:  state.notificationsEnabled,
         hapticEnabled:         state.hapticEnabled,
         natureSound:           state.natureSound,
+        binauralEnabled:       state.binauralEnabled,
+        bellChimeEnabled:      state.bellChimeEnabled,
         isPremium:             state.isPremium,
         isDebugUnlocked:       state.isDebugUnlocked,
       }),
